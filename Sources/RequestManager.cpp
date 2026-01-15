@@ -1,0 +1,141 @@
+#include "RequestManager.h"
+
+#include "Logger.h"
+
+RequestManager::RequestManager()
+{
+
+}
+
+RequestManager::~RequestManager()
+{
+	Stop();
+}
+
+void RequestManager::Stop()
+{
+	if (!_running.load(std::memory_order_acquire))
+	{
+		return;
+	}
+
+	_running.store(false, std::memory_order_release);
+	_cvQueue.notify_one();
+
+	if (_worker.joinable())
+	{
+		_worker.join();
+	}
+}
+
+
+void RequestManager::CreateDemand(Client& client, const OPCODE opcode, std::initializer_list<std::string> params, const uint32_t timeout, std::function<void()> onFailure, std::function<void()> onSuccess, const OPCODE expectedOpcode)
+{
+	std::lock_guard<std::mutex> lock(_queueMutex);
+
+	_demandQueue.push(std::make_unique<OutgoingRequest>(client, opcode, params, timeout, onFailure, onSuccess, expectedOpcode));
+	_cvQueue.notify_one();
+}
+
+void RequestManager::SendResponse(Client& client, const OPCODE opcode, std::initializer_list<std::string> params, std::function<void()> onTimeout)
+{
+	_messageManager->get().SendMessage(std::make_shared<OutgoingMessage>(Packet(client.Id, ORIGIN::CLIENT, opcode, params), client.Addr, onTimeout));
+}
+
+void RequestManager::RegisterProcessingFunction(std::function<void(IncomingRequest)> processingFunction)
+{
+	if (_processingFunction)
+	{
+		Logger::LogError<MessageManager>(ERROR_CODES::ALREAD_REGISTERED);
+	}
+
+	_processingFunction = processingFunction;
+}
+
+void RequestManager::ConnectToComunicator(MessageManager& messageManager)
+{
+	if (_running.load(std::memory_order_acquire))
+	{
+		Logger::LogError<RequestManager>(ERROR_CODES::ALREADY_CONNECTED_MANAGER);
+	}
+
+	_running.store(true, std::memory_order_release);
+	_worker = std::thread(&RequestManager::MainLoop, this);
+
+	_messageManager = messageManager;
+	_messageManager->get().RegisterProcessingFunction([this] (const IncomingMessage incommingMessage)
+		{
+			OnMessageRecieve(incommingMessage);
+		});
+}
+
+void RequestManager::OnMessageRecieve(IncomingMessage incomingMessage)
+{
+	if (incomingMessage.MainPacket.RequestOrigin == ORIGIN::SERVER)
+	{
+		{
+			std::lock_guard<std::mutex> lock(_ourDemandMutex);
+			auto corespondingDemand = _ourDemands.find(incomingMessage.MainPacket.ClientId);
+
+			if (corespondingDemand != _ourDemands.end())
+			{
+				auto& targetVec = corespondingDemand->second;
+
+				auto itVec = std::find_if(targetVec.begin(), targetVec.end(), [&] (const auto& demand)
+					{
+						return demand->ValidateIncomingMessage(incomingMessage);
+					});
+
+				if (itVec != targetVec.end())
+				{
+					targetVec.erase(itVec);
+				}
+			}
+
+			return;
+		}
+	}
+
+	if (incomingMessage.MainPacket.RequestOrigin == ORIGIN::CLIENT && _processingFunction)
+	{
+		_processingFunction(IncomingRequest(incomingMessage.MainPacket.ClientId, incomingMessage.ClientAddres, incomingMessage.MainPacket.Opcode, incomingMessage.MainPacket.Parameters));
+
+		return;
+	}
+
+	Logger::LogError<RequestManager>(ERROR_CODES::UNKNOWN_ORIGIN);
+}
+
+void RequestManager::MainLoop()
+{
+	while (_running.load(std::memory_order_acquire))
+	{
+		std::unique_ptr<OutgoingRequest> outgoingRequest;
+
+		{
+			std::unique_lock<std::mutex> lock(_queueMutex);
+
+			_cvQueue.wait(lock, [this] ()
+				{
+					return !_running.load(std::memory_order_acquire) || !_demandQueue.empty();
+				});
+
+			if (!_running.load(std::memory_order_acquire))
+			{
+				return;
+			}
+
+			outgoingRequest = std::move(_demandQueue.front());
+			_demandQueue.pop();
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(_ourDemandMutex);
+
+			_messageManager->get().SendMessage(outgoingRequest->DemandMessage);
+			outgoingRequest.get()->OnRequestSend();
+			_ourDemands[outgoingRequest.get()->DemandMessage->MainPacket.ClientId].push_back(std::move(outgoingRequest));
+			//_ourDemands.try_emplace(outgoingRequest.get()->DemandMessage->MainPacket.TargetId, std::move(outgoingRequest));
+		}
+	}
+}

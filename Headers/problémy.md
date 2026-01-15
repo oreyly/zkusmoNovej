@@ -1,0 +1,3 @@
+# ProblĂ©my
+- [ ] prohozenĂ­
+- [ ] odpojenĂ­
