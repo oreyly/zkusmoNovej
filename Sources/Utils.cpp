@@ -32,3 +32,24 @@ std::string Utils::Demangle(const std::string& mangledName)
 
     return (status == 0) ? res.get() : mangledName;
 }
+
+std::size_t Utils::IntSockaddrKeyHash::operator()(const std::pair<uint32_t, sockaddr_in>& p) const
+{
+    auto h1 = std::hash<uint32_t> {}(p.first);
+    auto h2 = std::hash<uint32_t> {}(p.second.sin_addr.s_addr);
+    auto h3 = std::hash<uint16_t> {}(p.second.sin_port);
+
+    std::size_t seed = h1;
+    seed ^= h2 + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    seed ^= h3 + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+    return seed;
+}
+
+bool Utils::IntSockaddrKeyEqual::operator()(const std::pair<uint32_t, sockaddr_in>& lhs, const std::pair<uint32_t, sockaddr_in>& rhs) const
+{
+    return lhs.first == rhs.first &&
+        lhs.second.sin_addr.s_addr == rhs.second.sin_addr.s_addr &&
+        lhs.second.sin_port == rhs.second.sin_port &&
+        lhs.second.sin_family == rhs.second.sin_family;
+}

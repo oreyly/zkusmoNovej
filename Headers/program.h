@@ -7,5 +7,5 @@
 
 // TODO: Reference additional headers your program requires here.
 
-int main();
+int main(int argc, char* argv[]);
 void ForcedExit();

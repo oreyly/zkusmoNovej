@@ -31,13 +31,13 @@ int main2()
     unsigned int clientlen;
     ssize_t received = 0;
 
-    // VytvoĹ™enĂ­ UDP soketu
+    // VytvoÄąâ„˘enÄ‚Â­ UDP soketu
     if ((sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
     {
         die("Failed to create socket");
     }
 
-    // NastavenĂ­ struktury serveru
+    // NastavenÄ‚Â­ struktury serveru
     std::memset(&echoserver, 0, sizeof(echoserver));
     echoserver.sin_family = AF_INET;
     echoserver.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -51,12 +51,12 @@ int main2()
         die("Failed to bind server socket");
     }
 
-    // HlavnĂ­ smyÄŤka serveru
+    // HlavnÄ‚Â­ smyĂ„Ĺ¤ka serveru
     while (true)
     {
         clientlen = sizeof(echoclient);
 
-        // PĹ™Ă­jem dat
+        // PÄąâ„˘Ä‚Â­jem dat
         received = recvfrom(sock, buffer, BUFFSIZE, 0,
             reinterpret_cast<sockaddr*>(&echoclient), &clientlen);
 
@@ -67,7 +67,7 @@ int main2()
 
         std::cerr << "Client connected: " << inet_ntoa(echoclient.sin_addr) << std::endl;
 
-        // OdeslĂˇnĂ­ dat zpÄ›t (Echo)
+        // OdeslÄ‚Ë‡nÄ‚Â­ dat zpĂ„â€şt (Echo)
         ssize_t sent = sendto(sock, buffer, received, 0,
             reinterpret_cast<sockaddr*>(&echoclient), sizeof(echoclient));
 

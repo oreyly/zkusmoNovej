@@ -13,13 +13,13 @@ public:
 
 	void Stop();
 
-	void ConnectToComunicator(MessageManager& comunicator);
-	void CreateDemand(Client& client, const OPCODE opcode, std::initializer_list<std::string> params, const uint32_t timeout, std::function<void()> onFailure, std::function<void()> onSuccess, const OPCODE expectedOpcode);
-	void SendResponse(Client& client, const OPCODE opcode, std::initializer_list<std::string> params, std::function<void()> onTimeout);
-	void RegisterProcessingFunction(std::function<void(IncomingRequest)> processingFunction);
+	void ConnectToMessageManager(MessageManager& comunicator);
+	void CreateDemand(Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void()> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode);
+	void SendResponse(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void()> onTimeout);
+	void RegisterProcessingFunction(std::function<void(std::shared_ptr<IncomingRequest>)> processingFunction);
 
 private:
-	std::function<void(IncomingRequest)> _processingFunction;
+	std::function<void(std::shared_ptr<IncomingRequest>)> _processingFunction;
 
 	std::queue<std::unique_ptr<OutgoingRequest>> _demandQueue;
 

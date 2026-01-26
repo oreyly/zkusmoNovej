@@ -1,14 +1,15 @@
 #include "Chessboard.h"
 #include <cmath>
 
-CheckersBoard::CheckersBoard()
+Chessboard::Chessboard()
 {
     setupInitialBoard();
 }
 
-void CheckersBoard::setupInitialBoard()
+void Chessboard::setupInitialBoard()
 {
-    currentPlayer = Player::White;
+    InitialPosition = true;
+    currentPlayer = PLAYER_COLOR::WHITE;
     multiJumpPos = std::nullopt;
     for (int r = 0; r < SIZE; ++r)
     {
@@ -17,19 +18,19 @@ void CheckersBoard::setupInitialBoard()
             board[r][c] = std::nullopt;
             if ((r + c) % 2 != 0)
             {
-                if (r < 3) board[r][c] = Piece {Player::Black, PieceType::Man};
-                else if (r > 4) board[r][c] = Piece {Player::White, PieceType::Man};
+                if (r < 3) board[r][c] = Piece {PLAYER_COLOR::BLACK, PIECE_TYPE::MAN};
+                else if (r > 4) board[r][c] = Piece {PLAYER_COLOR::WHITE, PIECE_TYPE::MAN};
             }
         }
     }
 }
 
-bool CheckersBoard::isWithinBounds(Position pos) const
+bool Chessboard::isWithinBounds(Position pos) const
 {
     return pos.row >= 0 && pos.row < SIZE && pos.col >= 0 && pos.col < SIZE;
 }
 
-bool CheckersBoard::canCapture(Position start, Position end) const
+bool Chessboard::canCapture(Position start, Position end) const
 {
     if (!isWithinBounds(start) || !isWithinBounds(end) || board[end.row][end.col]) return false;
 
@@ -42,9 +43,13 @@ bool CheckersBoard::canCapture(Position start, Position end) const
     int stepR = (dr > 0) ? 1 : -1;
     int stepC = (dc > 0) ? 1 : -1;
 
-    if (p->type == PieceType::Man)
+    if (p->type == PIECE_TYPE::MAN)
     {
         if (std::abs(dr) != 2) return false;
+
+        int allowedDir = (p->owner == PLAYER_COLOR::WHITE) ? -2 : 2;
+        if (dr != allowedDir) return false;
+
         Position mid {start.row + stepR, start.col + stepC};
         return board[mid.row][mid.col] && board[mid.row][mid.col]->owner != p->owner;
     }
@@ -65,11 +70,11 @@ bool CheckersBoard::canCapture(Position start, Position end) const
     }
 }
 
-bool CheckersBoard::canPieceCapture(Position pos) const
+bool Chessboard::canPieceCapture(Position pos) const
 {
     auto p = board[pos.row][pos.col];
     if (!p) return false;
-    int maxDist = (p->type == PieceType::King) ? SIZE : 2;
+    int maxDist = (p->type == PIECE_TYPE::KING) ? SIZE : 2;
     for (int d = 2; d <= maxDist; ++d)
     {
         int dr[] = {d, d, -d, -d}, dc[] = {d, -d, d, -d};
@@ -81,7 +86,7 @@ bool CheckersBoard::canPieceCapture(Position pos) const
     return false;
 }
 
-bool CheckersBoard::canAnyPieceCapture(Player player) const
+bool Chessboard::canAnyPieceCapture(PLAYER_COLOR player) const
 {
     for (int r = 0; r < SIZE; ++r)
         for (int c = 0; c < SIZE; ++c)
@@ -89,19 +94,19 @@ bool CheckersBoard::canAnyPieceCapture(Player player) const
     return false;
 }
 
-bool CheckersBoard::isValidMove(Position start, Position end) const
+bool Chessboard::isValidMove(Position start, Position end) const
 {
     if (!isWithinBounds(start) || !isWithinBounds(end) || board[end.row][end.col]) return false;
     auto p = board[start.row][start.col];
     int dr = end.row - start.row, dc = std::abs(end.col - start.col);
 
-    if (p->type == PieceType::Man)
+    if (p->type == PIECE_TYPE::MAN)
     {
-        int dir = (p->owner == Player::White) ? -1 : 1;
+        int dir = (p->owner == PLAYER_COLOR::WHITE) ? -1 : 1;
         return (dr == dir && dc == 1);
     }
     else
-    { // King - libovolnÃ½ pohyb po prÃ¡zdnÃ© diagonÃ¡le
+    { // King - libovolný pohyb po prázdné diagonále
         if (std::abs(dr) != dc) return false;
         int stepR = (dr > 0) ? 1 : -1, stepC = (end.col > start.col) ? 1 : -1;
         int r = start.row + stepR, c = start.col + stepC;
@@ -114,7 +119,7 @@ bool CheckersBoard::isValidMove(Position start, Position end) const
     }
 }
 
-bool CheckersBoard::movePiece(Position start, Position end)
+bool Chessboard::movePiece(Position start, Position end)
 {
     auto p = board[start.row][start.col];
     if (!p || p->owner != currentPlayer) return false;
@@ -124,7 +129,7 @@ bool CheckersBoard::movePiece(Position start, Position end)
     if (canAnyPieceCapture(currentPlayer) && !isCap) return false;
     if (!isCap && !isValidMove(start, end)) return false;
 
-    // ProvedenÃ­ pohybu
+    // Provedení pohybu
     if (isCap)
     {
         int stepR = (end.row - start.row > 0) ? 1 : -1;
@@ -147,19 +152,25 @@ bool CheckersBoard::movePiece(Position start, Position end)
     {
         promoteToKing(end);
         multiJumpPos = std::nullopt;
-        currentPlayer = (currentPlayer == Player::White) ? Player::Black : Player::White;
+        currentPlayer = (currentPlayer == PLAYER_COLOR::WHITE) ? PLAYER_COLOR::BLACK : PLAYER_COLOR::WHITE;
     }
+
+    if (InitialPosition)
+    {
+        InitialPosition = false;
+    }
+
     return true;
 }
 
-void CheckersBoard::promoteToKing(Position pos)
+void Chessboard::promoteToKing(Position pos)
 {
-    if ((board[pos.row][pos.col]->owner == Player::White && pos.row == 0) ||
-        (board[pos.row][pos.col]->owner == Player::Black && pos.row == SIZE - 1))
-        board[pos.row][pos.col]->type = PieceType::King;
+    if ((board[pos.row][pos.col]->owner == PLAYER_COLOR::WHITE && pos.row == 0) ||
+        (board[pos.row][pos.col]->owner == PLAYER_COLOR::BLACK && pos.row == SIZE - 1))
+        board[pos.row][pos.col]->type = PIECE_TYPE::KING;
 }
 
-void CheckersBoard::print() const
+void Chessboard::print() const
 {
     std::cout << "  0 1 2 3 4 5 6 7\n";
     for (int r = 0; r < SIZE; ++r)
@@ -168,23 +179,50 @@ void CheckersBoard::print() const
         for (int c = 0; c < SIZE; ++c)
         {
             if (!board[r][c]) std::cout << ((r + c) % 2 != 0 ? ". " : "  ");
-            else std::cout << (board[r][c]->owner == Player::White ? (board[r][c]->type == PieceType::King ? "W " : "w ") : (board[r][c]->type == PieceType::King ? "B " : "b "));
+            else std::cout << (board[r][c]->owner == PLAYER_COLOR::WHITE ? (board[r][c]->type == PIECE_TYPE::KING ? "W " : "w ") : (board[r][c]->type == PIECE_TYPE::KING ? "B " : "b "));
         }
         std::cout << r << "\n";
     }
-    std::cout << "  0 1 2 3 4 5 6 7\nNa tahu: " << (currentPlayer == Player::White ? "Bila" : "Cerna") << "\n";
+    std::cout << "  0 1 2 3 4 5 6 7\nNa tahu: " << (currentPlayer == PLAYER_COLOR::WHITE ? "Bila" : "Cerna") << "\n";
 }
 
-bool CheckersBoard::isGameOver() const
+GAME_STATE Chessboard::GetGameState() const
 {
+    bool whiteHasFigs = false;
+    bool blackHasFigs = false;
+
     for (int r = 0; r < SIZE; ++r)
         for (int c = 0; c < SIZE; ++c)
-            if (board[r][c] && board[r][c]->owner == currentPlayer)
+            if (board[r][c])
             {
-                if (canPieceCapture({r, c})) return false;
-                for (int dr = -1; dr <= 1; dr += 2)
-                    for (int dc = -1; dc <= 1; dc += 2)
-                        if (isValidMove({r, c}, {r + dr, c + dc})) return false;
+                if (!whiteHasFigs && board[r][c]->owner == PLAYER_COLOR::WHITE)
+                {
+                    whiteHasFigs = true;
+                }
+                
+                if(!blackHasFigs && board[r][c]->owner == PLAYER_COLOR::BLACK)
+                {
+                    blackHasFigs = true;
+                }
+
+                if (board[r][c]->owner == currentPlayer)
+                {
+                    if (canPieceCapture({r, c})) return GAME_STATE::IN_PROGRESS;
+                    for (int dr = -1; dr <= 1; dr += 2)
+                        for (int dc = -1; dc <= 1; dc += 2)
+                            if (isValidMove({r, c}, {r + dr, c + dc})) return GAME_STATE::IN_PROGRESS;
+                }
             }
-    return true;
+
+    if (!whiteHasFigs)
+    {
+        return GAME_STATE::BLACK_WIN;
+    }
+
+    if (!blackHasFigs)
+    {
+        return GAME_STATE::WHITE_WIN;
+    }
+
+    return GAME_STATE::DRAW;
 }

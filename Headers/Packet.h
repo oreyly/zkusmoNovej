@@ -1,16 +1,11 @@
 #pragma once
 
-#include "opcode.h"
+#include "Opcode.h"
+#include "Origin.h"
 
 #include <string>
 #include <vector>
 #include <atomic>
-
-enum class ORIGIN : uint32_t
-{
-	SERVER,
-	CLIENT
-};
 
 class Packet
 {
@@ -22,9 +17,12 @@ public:
 	const std::vector<std::string>& Parameters = _parameters;
 	const bool& IsValid = _isValid;
 
-	Packet(const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode, std::initializer_list<std::string> params);
+	Packet(const Packet& other);
+	Packet(const uint32_t id, const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode);
+	Packet(const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode, const std::vector<std::string>& params);
 	Packet(const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode) : Packet(targetId, requestOrigin, opcode, {}) { }
 	Packet(std::string message);
+	Packet& operator=(const Packet& other);
 
 	std::string CreateString() const;
 

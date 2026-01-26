@@ -12,7 +12,7 @@
 class Comunicator
 {
 public:
-	Comunicator(int port);
+	Comunicator(std::string address, int port);
 	~Comunicator();
 
 	void Stop();

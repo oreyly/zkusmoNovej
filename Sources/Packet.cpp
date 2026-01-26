@@ -10,9 +10,32 @@
 
 std::atomic<uint32_t> Packet::_maxId {1};
 
-Packet::Packet(const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode, std::initializer_list<std::string> params) : _id(NextId()), _clientId(targetId), _requestOrigin(requestOrigin), _opcode(opcode), _parameters(params)
+Packet::Packet(const uint32_t id, const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode) : _id(id), _clientId(targetId), _requestOrigin(requestOrigin), _opcode(opcode), _parameters({})
 {
     _isValid = true;
+}
+
+Packet::Packet(const uint32_t targetId, const ORIGIN requestOrigin, const OPCODE opcode, const std::vector<std::string>& params) : _id(NextId()), _clientId(targetId), _requestOrigin(requestOrigin), _opcode(opcode), _parameters(params)
+{
+    _isValid = true;
+}
+
+Packet::Packet(const Packet& other) : _id(other.Id), _clientId(other.ClientId), _requestOrigin(other.RequestOrigin), _opcode(other.Opcode), _parameters(other.Parameters)
+{
+
+}
+
+Packet& Packet::operator =(const Packet& other)
+{
+    if (this != &other)
+    {
+        _id = other.Id;
+        _clientId = other.ClientId;
+        _requestOrigin = other.RequestOrigin;
+        _opcode = other.Opcode;
+        _parameters = other.Parameters;
+    }
+    return *this;
 }
 
 Packet::Packet(std::string message)
@@ -48,7 +71,7 @@ Packet::Packet(std::string message)
 
     _opcode = opcodeCast.value();
 
-    for (std::string s : parts | std::views::drop(2))
+    for (std::string s : parts | std::views::drop(4))
     {
         _parameters.push_back(std::move(s));
     }

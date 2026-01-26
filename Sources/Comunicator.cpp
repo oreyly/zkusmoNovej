@@ -10,7 +10,7 @@
 
 // --- Comunicator ---
 
-Comunicator::Comunicator(int port) : _sock(socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP))
+Comunicator::Comunicator(std::string address, int port) : _sock(socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP))
 {
     if (_sock < 0)
     {
@@ -20,7 +20,7 @@ Comunicator::Comunicator(int port) : _sock(socket(PF_INET, SOCK_DGRAM, IPPROTO_U
     sockaddr_in comunicatorServer {};
     std::memset(&comunicatorServer, 0, sizeof(comunicatorServer));
     comunicatorServer.sin_family = AF_INET;
-    comunicatorServer.sin_addr.s_addr = htonl(INADDR_ANY);
+    comunicatorServer.sin_addr.s_addr = inet_addr(address.c_str());
     comunicatorServer.sin_port = htons(port);
 
     if (bind(_sock, reinterpret_cast<sockaddr*>(&comunicatorServer), sizeof(comunicatorServer)) < 0)
@@ -28,7 +28,14 @@ Comunicator::Comunicator(int port) : _sock(socket(PF_INET, SOCK_DGRAM, IPPROTO_U
         Logger::LogError<Comunicator>(ERROR_CODES::CANNOT_BIND_SOCKET);
     }
 
-    Logger::LogMessage<Comunicator>("Komunikátor úspìšnì inicializován na portu " + std::to_string(ntohs(comunicatorServer.sin_port)));
+    socklen_t sockLen = sizeof(comunicatorServer);
+
+    if (getsockname(_sock, reinterpret_cast<sockaddr*>(&comunicatorServer), &sockLen) == -1)
+    {
+        Logger::LogError<Comunicator>(ERROR_CODES::SOCEK_IFNO_UNAVAILABLE);
+    }
+
+    Logger::LogMessage<Comunicator>("Komunikator uspesne inicializovan na portu " + std::to_string(ntohs(comunicatorServer.sin_port)));
 
     _running.store(true, std::memory_order_release);
 
@@ -139,7 +146,7 @@ void Comunicator::Listener::MainLoop()
         {
             std::string message(buffer, received);
 
-            Logger::LogMessage<Comunicator>("Pøijmuta zpráva: \"" + message + "\" z adresy: " +
+            Logger::LogMessage<Comunicator>("Prijmuta zprava: \"" + message + "\" z adresy: " +
                 inet_ntoa(sourceClient.sin_addr) + ":" +
                 std::to_string(ntohs(sourceClient.sin_port)));
 
@@ -256,7 +263,7 @@ void Comunicator::Sender::MainLoop()
 
 void Comunicator::Sender::doSend(const sockaddr_in& targetAddr, const std::string& message)
 {
-    Logger::LogMessage<Comunicator>("Odesílání zprávy: \"" + message + "\" na adresu: " + inet_ntoa(targetAddr.sin_addr) + ":" + std::to_string(ntohs(targetAddr.sin_port)));
+    Logger::LogMessage<Sender>("Odesilani zpravy: \"" + message + "\" na adresu: " + inet_ntoa(targetAddr.sin_addr) + ":" + std::to_string(ntohs(targetAddr.sin_port)));
 
     ssize_t sent = sendto(_comunicator._sock, message.c_str(), message.length(), 0,
         reinterpret_cast<const sockaddr*>(&targetAddr),
@@ -264,13 +271,13 @@ void Comunicator::Sender::doSend(const sockaddr_in& targetAddr, const std::strin
 
     if (sent < 0)
     {
-        Logger::LogError<Comunicator>(ERROR_CODES::FATAL_SOCKET);
+        Logger::LogError<Sender>(ERROR_CODES::FATAL_SOCKET);
         ForcedExit();
     }
 
     if (static_cast<size_t>(sent) != message.length())
     {
-        Logger::LogError<Comunicator>(ERROR_CODES::CANNOT_SEND_VIA_SOCKET);
+        Logger::LogError<Sender>(ERROR_CODES::CANNOT_SEND_VIA_SOCKET);
         ForcedExit();
     }
 }

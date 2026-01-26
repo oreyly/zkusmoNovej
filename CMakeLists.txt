@@ -3,14 +3,25 @@
 #
 
 # Add source to this project's executable.
-add_executable (zkusmoNovej "ExternalLibraries/magic_enum.hpp" "Sources/program.cpp" "Headers/program.h" "Sources/ComunicatorO.cpp"  "Headers/Errors.h" "Sources/Errors.cpp" "Sources/Logger.cpp" "Headers/Logger.h" "Sources/starejkod.cpp" "Sources/Client.cpp" "Headers/Client.h" "Headers/Comunicator.h" "Sources/Comunicator.cpp" "Sources/RequestManager.cpp" "Headers/Message.h" "Headers/Packet.h" "Sources/Packet.cpp" "Headers/Utils.h" "Sources/Utils.cpp" "Sources/Message.cpp" "Headers/RequestManager.h" "Sources/RequestManager.cpp" "Headers/Request.h" "Sources/Request.cpp" "Headers/MessageManager.h" "Sources/MessageManager.cpp"  "Headers/Chessboard.h" "Sources/Chessboard.cpp" "Headers/opcode.h" "Headers/GameLobby.h" "Headers/GameRoom.h" "Sources/GameLobby.cpp" "Sources/GameRoom.cpp")
+add_executable (zkusmoNovej "ExternalLibraries/magic_enum.hpp" "Sources/program.cpp" "Headers/program.h" "Sources/ComunicatorO.cpp"  "Enums/Errors.h" "Sources/Errors.cpp" "Sources/Logger.cpp" "Headers/Logger.h" "Sources/starejkod.cpp" "Sources/Client.cpp" "Headers/Client.h" "Headers/Comunicator.h" "Sources/Comunicator.cpp" "Sources/RequestManager.cpp" "Headers/Message.h" "Headers/Packet.h" "Sources/Packet.cpp" "Headers/Utils.h" "Sources/Utils.cpp" "Sources/Message.cpp" "Headers/RequestManager.h" "Sources/RequestManager.cpp" "Headers/Request.h" "Sources/Request.cpp" "Headers/MessageManager.h" "Sources/MessageManager.cpp"  "Headers/Chessboard.h" "Sources/Chessboard.cpp" "Enums/Opcode.h" "Headers/GameLobby.h" "Headers/GameRoom.h" "Sources/GameLobby.cpp" "Sources/GameRoom.cpp" "Enums/GameBool.h" "Enums/PieceType.h" "Enums/GameState.h" "Enums/LogLevel.h")
 
-# P≈ôid√°n√≠ slo≈æky s hlaviƒçkov√Ωmi soubory do vyhled√°vac√≠ cesty
+# P¯id·nÌ sloûky s hlaviËkov˝mi soubory do vyhled·vacÌ cesty
 target_include_directories(zkusmoNovej PRIVATE Headers)
+target_include_directories(zkusmoNovej PRIVATE Enums)
 target_include_directories(zkusmoNovej PRIVATE ExternalLibraries)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET zkusmoNovej PROPERTY CXX_STANDARD 20)
+    include(FetchContent)
+
+    FetchContent_Declare(
+      fmt
+      GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+      GIT_TAG        10.1.1  # FixnÌ verze je bezpeËnÏjöÌ neû "master"
+    )
+
+FetchContent_MakeAvailable(fmt)
+target_link_libraries(zkusmoNovej PRIVATE fmt::fmt)
 endif()
 
 # Provide definitions to help Visual Studio IntelliSense

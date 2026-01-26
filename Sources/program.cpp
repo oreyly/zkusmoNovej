@@ -69,19 +69,22 @@ void ForcedExit()
 #include "MessageManager.h"
 #include "RequestManager.h"
 #include "Client.h"
-#include "opcode.h"
+#include "Opcode.h"
+#include "GameLobby.h"
 
 #include <iostream>
 #include <csignal>
 #include <thread>
 #include <chrono>
 #include <arpa/inet.h>
+#include <memory>
+
 
 void ForcedExit()
 {
     exit(1);
 }
-// Glob√°ln√≠ p≈ô√≠znak pro ukonƒçen√≠ aplikace (nap≈ô. p≈ôes Ctrl+C)
+// Glob·lnÌ p¯Ìznak pro ukonËenÌ aplikace (nap¯. p¯es Ctrl+C)
 
 std::atomic<bool> g_running(true);
 void signalHandler(int s)
@@ -91,42 +94,33 @@ void signalHandler(int s)
 
 void onIncomingRequest(IncomingRequest req)
 {
-    // Zde server zpracov√°v√° po≈æadavky od Python klienta
-    std::cout << "[Server] P≈ôijat po≈æadavek z Python klienta p≈ôes RequestManager." << std::endl;
+    // Zde server zpracov·v· poûadavky od Python klienta
+    std::cout << "[Server] Prijat pozadavek z Python klienta pres RequestManager." << std::endl;
+
 }
 
-int main()
+int main(int argc, char* argv[])
 {
-    signal(SIGINT, signalHandler);
-
-    if (!Logger::init("server_log.txt")) return 1;
-
     try
     {
-        Comunicator comunicator(7890); // Server port
+        Logger::init("log.log");
+        std::string adress = "0.0.0.0";
+        uint32_t port = 7890;
 
-        MessageManager msgManager;
-        msgManager.ConnectToComunicator(comunicator, 2000, 3); // Timeout 2s, 3 pokusy
-
-        RequestManager reqManager;
-        reqManager.ConnectToComunicator(msgManager);
-        reqManager.RegisterProcessingFunction(onIncomingRequest);
-
-        std::cout << "Server bƒõ≈æ√≠ na portu 7890..." << std::endl;
-        while (g_running)
+        if (argc >= 3)
         {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            adress = argv[1];
+            port = Utils::Str2Uint(argv[2]);
         }
 
-        reqManager.Stop();
-        msgManager.Stop();
-        comunicator.Stop();
+        GameLobby g(adress, port);
+        std::this_thread::sleep_for(std::chrono::hours(1));
+        //g.WaitForEnd("pepa");
+        Logger::terminate();
     }
-    catch (const std::exception& e)
+    catch (const std::exception&)
     {
-        std::cerr << "Chyba: " << e.what() << std::endl;
-    }
 
-    Logger::terminate();
+    }
     return 0;
 }

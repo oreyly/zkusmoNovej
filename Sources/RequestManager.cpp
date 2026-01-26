@@ -29,20 +29,23 @@ void RequestManager::Stop()
 }
 
 
-void RequestManager::CreateDemand(Client& client, const OPCODE opcode, std::initializer_list<std::string> params, const uint32_t timeout, std::function<void()> onFailure, std::function<void()> onSuccess, const OPCODE expectedOpcode)
+void RequestManager::CreateDemand(Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void()> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode)
 {
-	std::lock_guard<std::mutex> lock(_queueMutex);
+	{
+		std::lock_guard<std::mutex> lock(_queueMutex);
 
-	_demandQueue.push(std::make_unique<OutgoingRequest>(client, opcode, params, timeout, onFailure, onSuccess, expectedOpcode));
+		_demandQueue.push(std::make_unique<OutgoingRequest>(client, opcode, params, timeout, onFailure, onSuccess, expectedOpcode));
+	}
+
 	_cvQueue.notify_one();
 }
 
-void RequestManager::SendResponse(Client& client, const OPCODE opcode, std::initializer_list<std::string> params, std::function<void()> onTimeout)
+void RequestManager::SendResponse(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void()> onTimeout)
 {
 	_messageManager->get().SendMessage(std::make_shared<OutgoingMessage>(Packet(client.Id, ORIGIN::CLIENT, opcode, params), client.Addr, onTimeout));
 }
 
-void RequestManager::RegisterProcessingFunction(std::function<void(IncomingRequest)> processingFunction)
+void RequestManager::RegisterProcessingFunction(std::function<void(std::shared_ptr<IncomingRequest>)> processingFunction)
 {
 	if (_processingFunction)
 	{
@@ -52,7 +55,7 @@ void RequestManager::RegisterProcessingFunction(std::function<void(IncomingReque
 	_processingFunction = processingFunction;
 }
 
-void RequestManager::ConnectToComunicator(MessageManager& messageManager)
+void RequestManager::ConnectToMessageManager(MessageManager& messageManager)
 {
 	if (_running.load(std::memory_order_acquire))
 	{
@@ -60,19 +63,21 @@ void RequestManager::ConnectToComunicator(MessageManager& messageManager)
 	}
 
 	_running.store(true, std::memory_order_release);
-	_worker = std::thread(&RequestManager::MainLoop, this);
 
 	_messageManager = messageManager;
 	_messageManager->get().RegisterProcessingFunction([this] (const IncomingMessage incommingMessage)
 		{
 			OnMessageRecieve(incommingMessage);
 		});
+
+	_worker = std::thread(&RequestManager::MainLoop, this);
 }
 
 void RequestManager::OnMessageRecieve(IncomingMessage incomingMessage)
 {
 	if (incomingMessage.MainPacket.RequestOrigin == ORIGIN::SERVER)
 	{
+		std::cout << incomingMessage.MainPacket.CreateString() << std::endl;
 		{
 			std::lock_guard<std::mutex> lock(_ourDemandMutex);
 			auto corespondingDemand = _ourDemands.find(incomingMessage.MainPacket.ClientId);
@@ -98,7 +103,7 @@ void RequestManager::OnMessageRecieve(IncomingMessage incomingMessage)
 
 	if (incomingMessage.MainPacket.RequestOrigin == ORIGIN::CLIENT && _processingFunction)
 	{
-		_processingFunction(IncomingRequest(incomingMessage.MainPacket.ClientId, incomingMessage.ClientAddres, incomingMessage.MainPacket.Opcode, incomingMessage.MainPacket.Parameters));
+		_processingFunction(std::make_shared<IncomingRequest>(incomingMessage.MainPacket.ClientId, incomingMessage.ClientAddres, incomingMessage.MainPacket.Opcode, incomingMessage.MainPacket.Parameters));
 
 		return;
 	}
@@ -131,10 +136,10 @@ void RequestManager::MainLoop()
 
 		{
 			std::lock_guard<std::mutex> lock(_ourDemandMutex);
-
-			_messageManager->get().SendMessage(outgoingRequest->DemandMessage);
-			outgoingRequest.get()->OnRequestSend();
-			_ourDemands[outgoingRequest.get()->DemandMessage->MainPacket.ClientId].push_back(std::move(outgoingRequest));
+			uint32_t clientId = outgoingRequest->DemandMessage->MainPacket.ClientId;
+			_ourDemands[clientId].push_back(std::move(outgoingRequest));
+			_ourDemands[clientId].back()->OnRequestSend();
+			_messageManager->get().SendMessage(_ourDemands[clientId].back()->DemandMessage);
 			//_ourDemands.try_emplace(outgoingRequest.get()->DemandMessage->MainPacket.TargetId, std::move(outgoingRequest));
 		}
 	}

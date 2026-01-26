@@ -2,7 +2,9 @@
 
 #include "Packet.h"
 
-OutgoingRequest::OutgoingRequest(const Client& client, const OPCODE opcode, std::initializer_list<std::string> params, const uint32_t timeout, std::function<void()> onFailure, std::function<void()> onSuccess, OPCODE expectedOpcode) : _timeout(timeout), _expectedOpcode(expectedOpcode), _onFailure(onFailure), _onSuccess(onSuccess)
+#include <iostream>
+
+OutgoingRequest::OutgoingRequest(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void()> onFailure, std::function<void(const std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode) : _timeout(timeout), _expectedOpcode(expectedOpcode), _onFailure(onFailure), _onSuccess(onSuccess)
 {
 	_waiting.store(false, std::memory_order_release);
 	_hasResult.store(false, std::memory_order_release);
@@ -23,14 +25,22 @@ OutgoingRequest::OutgoingRequest(const Client& client, const OPCODE opcode, std:
 OutgoingRequest::~OutgoingRequest()
 {
 	Stop();
+
+	std::unique_lock<std::mutex> lock(_stopMutex);
+	_cvStop.wait(lock, [this] ()
+		{
+			return !_stopping.load(std::memory_order_acquire);
+		});
 }
 
 void OutgoingRequest::Stop()
 {
-	if (!_waiting.load(std::memory_order_acquire))
+	if (_stopping.load(std::memory_order_acquire))
 	{
 		return;
 	}
+
+	_stopping.store(true, std::memory_order_release);
 
 	DemandMessage->Stop();
 	_waiting.store(false, std::memory_order_release);
@@ -39,6 +49,9 @@ void OutgoingRequest::Stop()
 	{
 		_worker.join();
 	}
+
+	_stopping.store(false, std::memory_order_release);
+	_cvStop.notify_one();
 }
 
 void OutgoingRequest::OnRequestSend()
@@ -68,7 +81,7 @@ void OutgoingRequest::WaitForResponse()
 		return;
 	}
 
-	_onSuccess();
+	_onSuccess(std::make_unique<IncomingRequest>(ResponseMessage->MainPacket.ClientId, ResponseMessage->ClientAddres, ResponseMessage->MainPacket.Opcode, ResponseMessage->MainPacket.Parameters));
 }
 
 bool OutgoingRequest::ValidateIncomingMessage(const IncomingMessage& incomingMessage)
@@ -78,7 +91,7 @@ bool OutgoingRequest::ValidateIncomingMessage(const IncomingMessage& incomingMes
 		return false;
 	}
 
-	bool validResponse = incomingMessage.MainPacket.Id == DemandMessage->MainPacket.Id && incomingMessage.MainPacket.Opcode == _expectedOpcode;
+	bool validResponse = incomingMessage.MainPacket.Opcode == _expectedOpcode;
 
 	if (validResponse)
 	{
@@ -92,7 +105,7 @@ bool OutgoingRequest::ValidateIncomingMessage(const IncomingMessage& incomingMes
 	return validResponse;
 }
 
-IncomingRequest::IncomingRequest(const uint32_t clientId, const sockaddr_in& sourceAddr, const OPCODE opcode, std::vector<std::string> params) : _clientId(clientId), _sourceAddress(sourceAddr), _opcode(opcode), _parameters(params)
+IncomingRequest::IncomingRequest(const uint32_t clientId, const sockaddr_in& sourceAddr, const OPCODE opcode, std::vector<std::string> params) : ClientId(clientId), SourceAddress(sourceAddr), Opcode(opcode), Parameters(params)
 {
 
 }

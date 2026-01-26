@@ -37,7 +37,7 @@ public:
 			Logger::LogError<Comunicator>(ERROR_CODES::CANNOT_BIND_SOCKET);
 		}
 
-		Logger::LogMessage<Comunicator>("Komunikátor úspěšně inicializován na portu " + std::to_string(ntohs(comunicatorServer.sin_port)));
+		Logger::LogMessage<Comunicator>("KomunikĂˇtor ĂşspÄ›ĹˇnÄ› inicializovĂˇn na portu " + std::to_string(ntohs(comunicatorServer.sin_port)));
 
 		std::thread senderThread(&Comunicator::Sender, this);
 		std::thread receiverThread(&Comunicator::Listener, this);
@@ -97,7 +97,7 @@ private:
 
 	void doSend(const sockaddr_in& targetAddr, const std::string& message)
 	{
-		Logger::LogMessage<Comunicator>("Odesílání zprávy: \"" + message + "\" na adresu: " + inet_ntoa(targetAddr.sin_addr) + ":" + std::to_string(ntohs(targetAddr.sin_port)));
+		Logger::LogMessage<Comunicator>("OdesĂ­lĂˇnĂ­ zprĂˇvy: \"" + message + "\" na adresu: " + inet_ntoa(targetAddr.sin_addr) + ":" + std::to_string(ntohs(targetAddr.sin_port)));
 
 		ssize_t sent = sendto(_sock, message.c_str(), message.length(), 0,
 			reinterpret_cast<const sockaddr*>(&targetAddr),
@@ -139,7 +139,7 @@ private:
 			{
 				std::string message(buffer, received);
 
-				Logger::LogMessage<Comunicator>("Přijmuta zpráva: \"" + message + "\" z adresy: " + inet_ntoa(sourceClient.sin_addr) + ":" + std::to_string(ntohs(sourceClient.sin_port)));
+				Logger::LogMessage<Comunicator>("PĹ™ijmuta zprĂˇva: \"" + message + "\" z adresy: " + inet_ntoa(sourceClient.sin_addr) + ":" + std::to_string(ntohs(sourceClient.sin_port)));
 
 			}
 			else if (received < 0)

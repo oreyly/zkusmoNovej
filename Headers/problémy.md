@@ -1,3 +1,3 @@
-# ProblĂ©my
-- [ ] prohozenĂ­
-- [ ] odpojenĂ­
+# ProblÄ‚Â©my
+- [ ] prohozenÄ‚Â­
+- [ ] odpojenÄ‚Â­

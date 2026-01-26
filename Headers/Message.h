@@ -56,7 +56,7 @@ public:
 
 	void Finish();
 	const bool& Finished = _finished;
-	const Packet& MainPacket;
+	const Packet MainPacket;
 	const sockaddr_in ClientAddres;
 private:
 	std::atomic<bool> _running;

@@ -3,6 +3,7 @@
 #include "Packet.h"
 #include "Comunicator.h"
 #include "Message.h"
+#include "Utils.h"
 
 #include <memory>
 #include <unordered_map>
@@ -40,6 +41,7 @@ private:
 	std::thread _messageWorker;
 
 	std::unordered_map<uint32_t, std::shared_ptr<OutgoingMessage>> _outgoingMessages;
+	std::unordered_map<std::pair<uint32_t, sockaddr_in>, std::shared_ptr<IncomingMessage>, Utils::IntSockaddrKeyHash, Utils::IntSockaddrKeyEqual> _incomingMessages;
 
 	std::mutex _incomingMutex;
 	std::mutex _outgoingMutex;
@@ -48,8 +50,8 @@ private:
 	std::list<std::pair<uint32_t,std::chrono::steady_clock::time_point>> _finishedIdTimesListOur;
 	std::unordered_map<uint32_t, std::list<std::pair<uint32_t, std::chrono::steady_clock::time_point>>::iterator> _finishedIdTimesMapOur;
 
-	std::list<std::pair<uint32_t, std::chrono::steady_clock::time_point>> _finishedIdTimesListTheir;
-	std::unordered_map<uint32_t, std::list<std::pair<uint32_t, std::chrono::steady_clock::time_point>>::iterator> _finishedIdTimesMapTheir;
+	std::list<std::pair<std::pair<uint32_t, sockaddr_in>, std::chrono::steady_clock::time_point>> _finishedIdTimesListTheir;
+	std::unordered_map<std::pair<uint32_t, sockaddr_in>, std::list<std::pair<std::pair<uint32_t, sockaddr_in>, std::chrono::steady_clock::time_point>>::iterator,Utils::IntSockaddrKeyHash, Utils::IntSockaddrKeyEqual> _finishedIdTimesMapTheir;
 
 	std::mutex _arrivingMutex;
 	std::condition_variable _cvMessageArrived;

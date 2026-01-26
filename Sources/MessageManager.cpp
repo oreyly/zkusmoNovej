@@ -4,7 +4,7 @@
 
 MessageManager::MessageManager()
 {
-	Logger::LogMessage<MessageManager>("Vytvoøen MessageManager.");
+	Logger::LogMessage<MessageManager>("VytvoÅ™en MessageManager.");
 }
 
 MessageManager::~MessageManager()
@@ -53,6 +53,7 @@ void MessageManager::ConnectToComunicator(Comunicator& comunicator, const uint32
 	if (_running.load(std::memory_order_acquire))
 	{
 		Logger::LogError<MessageManager>(ERROR_CODES::ALREADY_CONNECTED_MANAGER);
+		return;
 	}
 
 	_messageTimeout = messageTimeout;
@@ -69,7 +70,7 @@ void MessageManager::ConnectToComunicator(Comunicator& comunicator, const uint32
 			OnStringRecieve(targetAddr, message);
 		});
 
-	Logger::LogMessage<MessageManager>("MessageManager pøipojen ke komunikátoru.");
+	Logger::LogMessage<MessageManager>("MessageManager pÅ™ipojen ke komunikÃ¡toru.");
 }
 
 void MessageManager::RegisterProcessingFunction(std::function<void(IncomingMessage&)> processingFunction)
@@ -94,6 +95,11 @@ void MessageManager::SendMessage(std::shared_ptr<OutgoingMessage> outgoingMessag
 
 void MessageManager::SendPacket(const sockaddr_in& targetAddr, const Packet& packet)
 {
+	if (!_comunicator)
+	{
+		Logger::LogError<MessageManager>(ERROR_CODES::COMMUNICATOR_NOT_INITIALIZED);
+	}
+
 	_comunicator->get().Send(targetAddr, packet.CreateString());
 }
 
@@ -104,6 +110,8 @@ void MessageManager::CleaningLoop()
 		CleanFinished();
 		std::this_thread::sleep_for(std::chrono::milliseconds(CLEANER_SLEEP_MS));
 	}
+
+	CleanFinished();
 }
 
 void MessageManager::CleanFinished()
@@ -117,6 +125,12 @@ void MessageManager::CleanFinished()
 	{
 		_finishedIdTimesMapOur.erase(_finishedIdTimesListOur.front().first);
 		_finishedIdTimesListOur.pop_front();
+	}
+
+	while (!_finishedIdTimesListTheir.empty() && (now - _finishedIdTimesListTheir.front().second) > limit)
+	{
+		_finishedIdTimesMapTheir.erase(_finishedIdTimesListTheir.front().first);
+		_finishedIdTimesListTheir.pop_front();
 	}
 }
 
@@ -169,11 +183,11 @@ void MessageManager::MainLoop()
 		if (recievedPacket.Opcode == OPCODE::ACK)
 		{
 			{
-				std::lock_guard<std::mutex> lock(_outgoingMutex);
+				std::scoped_lock lock(_outgoingMutex, _finishedMutex);
 
 				auto reqIt = _outgoingMessages.find(recievedPacket.Id);
 
-				if (reqIt != _outgoingMessages.end())
+				if (reqIt == _outgoingMessages.end())
 				{
 					continue;
 				}
@@ -187,13 +201,32 @@ void MessageManager::MainLoop()
 			continue;
 		}
 
-		if (_finishedIdTimesMapOur.contains(recievedPacket.Id))
 		{
-			continue;
+			std::lock_guard<std::mutex> lock(_finishedMutex);
+
+			if (recievedPacket.RequestOrigin == ORIGIN::CLIENT && _finishedIdTimesMapTheir.contains({recievedPacket.Id, sourceAddr}))
+			{
+				continue;
+			}
 		}
 
 		IncomingMessage incommingMessage(recievedPacket, sourceAddr);
 		ConfirmReceiving(incommingMessage);
+
+		{
+			std::scoped_lock lock(_incomingMutex, _finishedMutex);
+
+			auto reqIt = _incomingMessages.find({incommingMessage.MainPacket.Id, sourceAddr});
+
+			if (reqIt != _incomingMessages.end())
+			{
+				continue;
+			}
+
+			_finishedIdTimesListTheir.push_back({{incommingMessage.MainPacket.Id, incommingMessage.ClientAddres},std::chrono::steady_clock::now()});
+			_finishedIdTimesMapTheir[{incommingMessage.MainPacket.Id, incommingMessage.ClientAddres}] = std::prev(_finishedIdTimesListTheir.end());
+		}
+
 		if (_processingFunction)
 		{
 			_processingFunction(incommingMessage);
@@ -203,5 +236,5 @@ void MessageManager::MainLoop()
 
 void MessageManager::ConfirmReceiving(IncomingMessage& incomingMessage)
 {
-	SendPacket(incomingMessage.ClientAddres, Packet(incomingMessage.MainPacket.Id, incomingMessage.MainPacket.RequestOrigin, OPCODE::ACK));
+	SendPacket(incomingMessage.ClientAddres, Packet(incomingMessage.MainPacket.Id,incomingMessage.MainPacket.ClientId, incomingMessage.MainPacket.RequestOrigin, OPCODE::ACK));
 }

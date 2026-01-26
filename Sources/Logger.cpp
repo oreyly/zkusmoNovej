@@ -44,9 +44,9 @@ bool Logger::init(std::string logFilePath)
 
     _worker = std::thread(&Logger::LogLoop);
 
-    _logFile << std::string(10,'=') + "Začátek relace" + std::string(10, '=') << std::endl;
+    _logFile << std::string(10,'=') + "Zacatek relace" + std::string(10, '=') << std::endl;
 
-    std::string initMessage = "Logger úspěšně inicializován. Všechny logy lze nalézt v souboru: ";
+    std::string initMessage = "Logger uspesne inicializovan. vsechny logy lze nalezt v souboru: ";
     initMessage += std::filesystem::absolute(std::filesystem::path(logFilePath));
 
     Logger::LogMessage<Logger>(initMessage);
@@ -68,7 +68,7 @@ void Logger::terminate()
         _worker.join();
     }
 
-    Logger::LogMessage<Logger>("Konec logování");
+    Logger::LogMessage<Logger>("Konec logovani�");
     _logFile << std::string(10, '=') + "Konec relace" + std::string(10, '=') << std::endl;
     _logFile.close();
 }

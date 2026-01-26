@@ -1,23 +1,18 @@
 #pragma once
 
+#include "LogLevel.h"
+#include "Errors.h"
+
 #include <fstream>
 #include <string>
 #include <unordered_map>
 #include <iostream>
-#include "Errors.h"
-
 #include <typeinfo>
 #include <thread>
 #include <atomic>
 #include <condition_variable>
 #include <queue>
 
-enum class LOG_LEVEL
-{
-    INFO,
-    ERROR,
-    WARNING
-};
 
 class Logger
 {
