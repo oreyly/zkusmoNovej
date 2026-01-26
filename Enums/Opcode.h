@@ -5,9 +5,8 @@
 enum class OPCODE : uint32_t
 {
     TEST,
-    PING,
 
-    ACK,
+    ACK = 2,
 
     CON = 4,
     CON_AS,
@@ -40,5 +39,8 @@ enum class OPCODE : uint32_t
     YOU_LEFT,
 
     GAME_QUIT,
-    GAME_QUITED
+    GAME_QUITED,
+
+    PING,
+    I_SEE_YOU,
 };

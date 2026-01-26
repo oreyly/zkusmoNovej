@@ -44,7 +44,7 @@ class IncomingMessage
 class OutgoingMessage
 {
 public:
-	OutgoingMessage(const Packet& mainPacket, const sockaddr_in& clientAddr, std::function<void()> onTimeout);
+	OutgoingMessage(const Packet& mainPacket, const sockaddr_in& clientAddr, std::function<void(uint32_t)> onTimeout);
 	~OutgoingMessage();
 
 	void Stop();
@@ -62,7 +62,7 @@ private:
 	std::atomic<bool> _running;
 
 	uint32_t _timeout;
-	const std::function<void()> _onTimeout;
+	const std::function<void(uint32_t)> _onTimeout;
 
 	uint32_t _maxAttempts;
 	uint32_t _attempts;

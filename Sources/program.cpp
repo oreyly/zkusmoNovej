@@ -71,6 +71,7 @@ void ForcedExit()
 #include "Client.h"
 #include "Opcode.h"
 #include "GameLobby.h"
+#include "argparse.hpp"
 
 #include <iostream>
 #include <csignal>
@@ -78,6 +79,11 @@ void ForcedExit()
 #include <chrono>
 #include <arpa/inet.h>
 #include <memory>
+#include <iostream>
+#include <string>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <cstring>
 
 
 void ForcedExit()
@@ -99,28 +105,96 @@ void onIncomingRequest(IncomingRequest req)
 
 }
 
+bool is_valid_host(const std::string& ip)
+{
+    if (ip.empty()) return false;
+    struct addrinfo hints, * res;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if (getaddrinfo(ip.c_str(), nullptr, &hints, &res) == 0)
+    {
+        freeaddrinfo(res);
+        return true;
+    }
+    return false;
+}
+
 int main(int argc, char* argv[])
 {
-    try
+    argparse::ArgumentParser program("server_app", "1.0", argparse::default_arguments::none);
+
+    std::string adress = "0.0.0.0";
+    uint32_t port = 7890;
+    uint32_t maxRooms = 20;
+    uint32_t maxPlayers = 50;
+
+    program.add_argument("-h", "--help")
+        .action([&] (const std::string&)
+            {
+                std::cout << program.help().str();
+                exit(0);
+            })
+        .default_value(false)
+        .implicit_value(true)
+        .help("Zde je váš vlastní text nápovìdy");
+
+    program.add_argument("-i", "--ip")
+        .default_value(port)
+        .help("IP adresa (default: 0.0.0.0)")
+        .action([adress] (const std::string& value)
+            {
+                return is_valid_host(value) ? value : adress;
+            });
+
+    program.add_argument("-p", "--port")
+        .default_value(port)
+        .help("Port (default: 7890)")
+        .action([port] (const std::string& value) -> uint32_t
+            {
+                try
+                {
+                    int p = std::stoi(value);
+                    if (p >= 0 && p <= 65535) return p;
+                }
+                catch (...)
+                {
+                }
+                return port;
+            });
+
+    program.add_argument("-r", "--max-rooms")
+        .default_value(maxRooms)
+        .help("Maximální poèet roomek")
+        .action([maxRooms] (const std::string& value)
+            {
+                uint32_t v = Utils::Str2Uint(value);
+
+                return v > 1 && v < 100 ? v : maxRooms;
+            });
+
+    program.add_argument("-c", "--max-clients")
+        .default_value(maxPlayers)
+        .help("Maximální poèet hráèù")
+        .action([maxPlayers] (const std::string& value)
+            {
+                uint32_t v = Utils::Str2Uint(value);
+
+                return v > 2 && v < 300 ? v : maxPlayers;
+            });
+
+    Logger::init("log.log");
+
+    if (argc >= 3)
     {
-        Logger::init("log.log");
-        std::string adress = "0.0.0.0";
-        uint32_t port = 7890;
-
-        if (argc >= 3)
-        {
-            adress = argv[1];
-            port = Utils::Str2Uint(argv[2]);
-        }
-
-        GameLobby g(adress, port);
-        std::this_thread::sleep_for(std::chrono::hours(1));
-        //g.WaitForEnd("pepa");
-        Logger::terminate();
+        adress = argv[1];
+        port = Utils::Str2Uint(argv[2]);
     }
-    catch (const std::exception&)
-    {
 
-    }
+    GameLobby g(adress, port, maxRooms, maxPlayers);
+    g.CommandWorker.join();
+    Logger::terminate();
+
     return 0;
 }

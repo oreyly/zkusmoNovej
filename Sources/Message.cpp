@@ -8,7 +8,7 @@ IncomingMessage::IncomingMessage(const Packet& packet, const sockaddr_in& client
 
 }
 
-OutgoingMessage::OutgoingMessage(const Packet& mainPacket, const sockaddr_in& clientAddr, const std::function<void()> onTimeout) : MainPacket(mainPacket), ClientAddres(clientAddr), _attempts(0), _onTimeout(onTimeout)
+OutgoingMessage::OutgoingMessage(const Packet& mainPacket, const sockaddr_in& clientAddr, const std::function<void(uint32_t)> onTimeout) : MainPacket(mainPacket), ClientAddres(clientAddr), _attempts(0), _onTimeout(onTimeout)
 { }
 
 OutgoingMessage::~OutgoingMessage()
@@ -91,5 +91,5 @@ void OutgoingMessage::WaitForAck()
         _messageManager->get().SendPacket(ClientAddres, MainPacket);
     }
 
-    _onTimeout();
+    _onTimeout(MainPacket.ClientId);
 }

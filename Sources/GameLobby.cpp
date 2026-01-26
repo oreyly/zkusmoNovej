@@ -9,17 +9,17 @@
 #include <random>
 
 #ifndef BIND_TIMEOUT
-#define BIND_TIMEOUT [this]() { OnTimeout(); }
+#define BIND_TIMEOUT [this](uint32_t id) { OnTimeout(id); }
 #endif
 
 
-GameLobby::GameLobby(std::string address, uint32_t port)
+GameLobby::GameLobby(std::string address, uint32_t port, uint32_t maxRooms, uint32_t maxPlayers) : _maxRooms(maxRooms), _maxPlayers(maxPlayers)
 {
     PrepareHandler();
 
     _comunicator = std::make_unique<Comunicator>(address, port);
     _messageManager = std::make_unique<MessageManager>();
-    _requestManager = std::make_unique<RequestManager>();
+    _requestManager = std::make_unique<RequestManager>(5000);
 
     _messageManager->ConnectToComunicator(*_comunicator, 2000, 3);
     _requestManager->ConnectToMessageManager(*_messageManager);
@@ -30,7 +30,8 @@ GameLobby::GameLobby(std::string address, uint32_t port)
 
     _running.store(true, std::memory_order_release);
     _mainWorker = std::thread(&GameLobby::MainLoop, this);
-    _commandWorker = std::thread(&GameLobby::CommandLoop, this);
+    CommandWorker = std::thread(&GameLobby::CommandLoop, this);
+    _pingWorker = std::thread(&GameLobby::PingLoop, this);
 
     std::random_device rd;
     std::mt19937 gen(rd()); 
@@ -83,6 +84,11 @@ void GameLobby::Stop()
         _mainWorker.join();
     }
 
+    if (_pingWorker.joinable())
+    {
+        _pingWorker.join();
+    }
+
     if (t1.joinable())
     {
         t1.join();
@@ -116,17 +122,77 @@ void GameLobby::CommandLoop()
     }
 }
 
+void GameLobby::PingLoop()
+{
+    while (_running.load(std::memory_order_acquire))
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        {
+            std::lock_guard<std::mutex> lock(_clientsMutex);
+            PingClients();
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_clientsMutex);
+            CheckClients();
+        }
+    }
+}
+
+void GameLobby::PingClients()
+{
+    for (auto [id, client] : _clients)
+    {
+        if (!client.Online)
+        {
+            continue;
+        }
+
+        _requestManager->CreateDemand(client, OPCODE::PING, {}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+            {
+                PlayerKnowResult(std::move(ir));
+            }, OPCODE::I_SEE_YOU
+        );
+    }
+}
+
+void GameLobby::CheckClients()
+{
+    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+    for (auto [id, client] : _clients)
+    {
+        if (!client.Online)
+        {
+            continue;
+        }
+
+        if (now - client.LastEcho > std::chrono::seconds(5))
+        {
+            std::cout << "Vypinam" << std::endl;
+            client.Online = false;
+        }
+    }
+}
+
 void GameLobby::ProcessCommand(std::string& command)
 {
     if (command == "clients")
     {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
+
         std::stringstream ss("List klientu:\n");
+
+        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 
         for (const auto& [id, client] : _clients)
         {
             char ipBuf[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &client.Addr.sin_addr, ipBuf, INET_ADDRSTRLEN);
-            ss << "Klient: " << id << "\t Jmeno: " << client.Name << "\t Adresa: " << std::string(ipBuf) << ":" << std::to_string(ntohs(client.Addr.sin_port)) << "\n";
+
+            ss << "Klient: " << id << "\t Jmeno: " << client.Name << "\t Adresa: " << std::string(ipBuf) << ":" << std::to_string(ntohs(client.Addr.sin_port)) << "\t Online: " << (client.Online ? "Ano" : "Ne") << "\t Posl. echo pred: " 
+                << std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(now - client.LastEcho).count()) << " ms" << "\n";
         }
 
         Logger::LogMessage<GameLobby>(ss.str());
@@ -138,6 +204,8 @@ void GameLobby::ProcessCommand(std::string& command)
     }
     else if (command == "rooms")
     {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
+
         std::stringstream ss("List roomek:\n");
 
         for (const auto& [id, room] : _gameRooms)
@@ -195,7 +263,11 @@ void GameLobby::MainLoop()
                 return;
             }
 
-            incommingRequest = std::move(_incomingRequests.front());
+            {
+                std::lock_guard<std::mutex> lock(_clientsMutex);
+                incommingRequest = std::move(_incomingRequests.front());
+            }
+
             _incomingRequests.pop();
         }
 
@@ -203,14 +275,32 @@ void GameLobby::MainLoop()
     }
 }
 
-void GameLobby::OnTimeout()
+void GameLobby::OnTimeout(uint32_t id)
 {
-    Logger::LogMessage<GameLobby>("Smolik");
+    {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
+
+        auto demandedClient = _clients.find(id);
+
+        if (demandedClient == _clients.end())
+        {
+            Logger::LogMessage<GameLobby>("Timeout neexistujiciho klienta");
+            return;
+        }
+
+        _clients.at(id).Online = false;
+    }
 }
 
 void GameLobby::RegisterClient(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
     Client newClient(incomingRequest->SourceAddress);
+
+    if (_clients.size() >= _maxPlayers)
+    {
+        _requestManager->SendResponse(newClient, OPCODE::CON_AS, {std::to_string(0)}, BIND_TIMEOUT);
+        return;
+    }
 
     _requestManager->SendResponse(newClient, OPCODE::CON_AS, {std::to_string(newClient.Id)}, BIND_TIMEOUT);
 
@@ -235,7 +325,7 @@ void GameLobby::AssignName(std::shared_ptr<IncomingRequest>& incomingRequest)
 void GameLobby::ListRooms(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
     std::vector<std::string> roomList;
-    roomList.reserve(_gameRooms.size() * 3); // Optimalizace alokace
+    roomList.reserve(_gameRooms.size() * 3);
 
     for (const auto& [_, gr] : _gameRooms)
     {
@@ -249,6 +339,12 @@ void GameLobby::ListRooms(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::CreateRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    if (_gameRooms.size() >= _maxRooms)
+    {
+        _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::ROOM_CREATED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
+        return;
+    }
+
     std::unique_ptr<GameRoom> room = std::make_unique<GameRoom>();
 
     switch (PLAYER_COLOR(Utils::Str2Uint(incomingRequest->Parameters[0])))
@@ -288,7 +384,7 @@ void GameLobby::JoinRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
     std::string oponentName = _clients.at(demandedRoom->second.get()->GetPlayerId(!playerColor)).Name;
 
     _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::GOT_TO_ROOM, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE)), oponentName}, BIND_TIMEOUT);
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second.get()->GetPlayerId(!playerColor)), OPCODE::OPPONENT_ARRIVED, {_clients.at(incomingRequest->ClientId).Name}, 5000, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+    _requestManager->CreateDemand(_clients.at(demandedRoom->second.get()->GetPlayerId(!playerColor)), OPCODE::OPPONENT_ARRIVED, {_clients.at(incomingRequest->ClientId).Name}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
         {
             PlayerGotOpponent(std::move(ir));
         },OPCODE::KNOW_ABOUT_HIM);
@@ -315,7 +411,7 @@ void GameLobby::PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest)
 
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_MOVED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE))}, BIND_TIMEOUT);
 
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetOtherPlayerId(incomingRequest->ClientId)), OPCODE::HE_MOVED, incomingRequest->Parameters, 5000, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetOtherPlayerId(incomingRequest->ClientId)), OPCODE::HE_MOVED, incomingRequest->Parameters, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
         {
             PlayerGotMove(std::move(ir));
         }, OPCODE::I_KNOW_HE_MOVED);
@@ -327,12 +423,12 @@ void GameLobby::PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest)
         return;
     }
 
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetWhiteId()), OPCODE::GAME_FINISHED, {std::to_string(static_cast<uint32_t>(gameState))}, 5000, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetWhiteId()), OPCODE::GAME_FINISHED, {std::to_string(static_cast<uint32_t>(gameState))}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
         {
             PlayerKnowResult(std::move(ir));
         }, OPCODE::FINALY_END);
 
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetBlackId()), OPCODE::GAME_FINISHED, {std::to_string(static_cast<uint32_t>(gameState))}, 5000, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetBlackId()), OPCODE::GAME_FINISHED, {std::to_string(static_cast<uint32_t>(gameState))}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
         {
             PlayerKnowResult(std::move(ir));
         }, OPCODE::FINALY_END);
@@ -346,14 +442,12 @@ void GameLobby::PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::PlayerLeave(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
-    Logger::LogMessage<GameLobby>("Lybuju");
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_LEFT, {}, BIND_TIMEOUT);
-    _clients.erase(incomingRequest->ClientId);
+    _clients.at(incomingRequest->ClientId).Online = false;
 }
 
 void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
-    Logger::LogMessage<GameLobby>("Quitting");
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::GAME_QUITED, {}, BIND_TIMEOUT);
 
     auto demandedRoom = _gameRooms.find(_clients.at(incomingRequest->ClientId).GameRoomId);
@@ -383,7 +477,6 @@ void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
             _clients.at(otherPlayerId),
             OPCODE::OPPONENT_ARRIVED,
             {""},
-            5000,
             BIND_TIMEOUT,
             [this] (std::unique_ptr<IncomingRequest> ir)
             {
@@ -397,7 +490,6 @@ void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
         _clients.at(otherPlayerId),
         OPCODE::GAME_FINISHED,
         {std::to_string(static_cast<uint32_t>(_gameRooms.at(roomId)->GetPlayerColor(incomingRequest->ClientId) == PLAYER_COLOR::WHITE ? GAME_STATE::BLACK_WIN : GAME_STATE::WHITE_WIN))},
-        5000,
         BIND_TIMEOUT,
         [this] (std::unique_ptr<IncomingRequest> ir)
         {
@@ -409,17 +501,38 @@ void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
     _gameRooms.erase(_gameRooms.at(roomId)->Id);
 }
 
+void GameLobby::ClientPinged(std::unique_ptr<IncomingRequest> incomingRequest)
+{
+    {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
+
+        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
+    }
+}
+
 void GameLobby::PlayerGotOpponent(std::unique_ptr<IncomingRequest> incomingRequest)
 {
+    {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
 
+        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
+    }
 }
 
 void GameLobby::PlayerGotMove(std::unique_ptr<IncomingRequest> incomingRequest)
 {
+    {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
 
+        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
+    }
 }
 
 void GameLobby::PlayerKnowResult(std::unique_ptr<IncomingRequest> incomingRequest)
 {
+    {
+        std::lock_guard<std::mutex> lock(_clientsMutex);
 
+        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
+    }
 }

@@ -55,6 +55,7 @@ Packet::Packet(std::string message)
 
     if (!originCast.has_value())
     {
+        std::cout << "NEeeeeee" << std::endl;
         _isValid = false;
         return;
     }
@@ -65,6 +66,7 @@ Packet::Packet(std::string message)
 
     if (!opcodeCast.has_value())
     {
+        std::cout << "NEEEEEEEEE" << std::endl;
         _isValid = false;
         return;
     }

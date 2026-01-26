@@ -8,7 +8,7 @@ class IncomingRequest;
 class OutgoingRequest
 {
 public:
-	OutgoingRequest(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void()> onFailure, std::function<void(const std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode);
+	OutgoingRequest(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void(uint32_t)> onFailure, std::function<void(const std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode);
 	~OutgoingRequest();
 
 	void Stop();
@@ -26,7 +26,7 @@ private:
 
 	const uint32_t _timeout;
 
-	std::function<void()> _onFailure;
+	std::function<void(uint32_t)> _onFailure;
 	std::function<void(const std::unique_ptr<IncomingRequest>)> _onSuccess;
 
 	const OPCODE _expectedOpcode;

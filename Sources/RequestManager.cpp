@@ -2,7 +2,7 @@
 
 #include "Logger.h"
 
-RequestManager::RequestManager()
+RequestManager::RequestManager(uint32_t timeout): _timeout(timeout)
 {
 
 }
@@ -29,18 +29,18 @@ void RequestManager::Stop()
 }
 
 
-void RequestManager::CreateDemand(Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void()> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode)
+void RequestManager::CreateDemand(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t)> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode)
 {
 	{
 		std::lock_guard<std::mutex> lock(_queueMutex);
 
-		_demandQueue.push(std::make_unique<OutgoingRequest>(client, opcode, params, timeout, onFailure, onSuccess, expectedOpcode));
+		_demandQueue.push(std::make_unique<OutgoingRequest>(client, opcode, params, _timeout, onFailure, onSuccess, expectedOpcode));
 	}
 
 	_cvQueue.notify_one();
 }
 
-void RequestManager::SendResponse(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void()> onTimeout)
+void RequestManager::SendResponse(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t)> onTimeout)
 {
 	_messageManager->get().SendMessage(std::make_shared<OutgoingMessage>(Packet(client.Id, ORIGIN::CLIENT, opcode, params), client.Addr, onTimeout));
 }

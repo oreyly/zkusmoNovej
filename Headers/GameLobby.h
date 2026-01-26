@@ -13,12 +13,16 @@
 class GameLobby
 {
 public:
-    GameLobby(std::string address, uint32_t port);
+    GameLobby(std::string address, uint32_t port, uint32_t maxRooms, uint32_t maxPlayers);
     ~GameLobby();
 
     void Stop();
+    std::thread CommandWorker;
 
 private:
+    const uint32_t _maxRooms;
+    const uint32_t _maxPlayers;
+
     std::atomic<bool> _stopping;
     std::mutex _stopMutex;
     std::condition_variable _cvStop;
@@ -26,7 +30,8 @@ private:
     std::atomic<bool> _running;
     std::thread _mainWorker;
 
-    std::thread _commandWorker;
+
+    std::thread _pingWorker;
 
     std::queue<std::shared_ptr<IncomingRequest>> _incomingRequests; 
     std::unordered_map<OPCODE, std::function<void(std::shared_ptr<IncomingRequest>&)>> _handlers;
@@ -44,13 +49,17 @@ private:
     std::mutex _clientsMutex;
 
     void CommandLoop();
+    void PingLoop();
+
+    void PingClients();
+    void CheckClients();
 
     void ProcessCommand(std::string& command);
 
     void PrepareHandler();
     void AddIncomingRequest(std::shared_ptr<IncomingRequest> incomingRequest);
     void MainLoop();
-    void OnTimeout();
+    void OnTimeout(uint32_t id);
 
     void RegisterClient(std::shared_ptr<IncomingRequest>& incomingRequest);
     void AssignName(std::shared_ptr<IncomingRequest>& incomingRequest);
@@ -61,6 +70,7 @@ private:
     void PlayerLeave(std::shared_ptr<IncomingRequest>& incomingRequest);
     void PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest);
 
+    void ClientPinged(std::unique_ptr<IncomingRequest> incomingRequest);
     void PlayerGotOpponent(std::unique_ptr<IncomingRequest> incomingRequest);
     void PlayerGotMove(std::unique_ptr<IncomingRequest> incomingRequest);
     void PlayerKnowResult(std::unique_ptr<IncomingRequest> incomingRequest);
