@@ -22,7 +22,8 @@ enum class ERROR_CODES : uint32_t
 	COMMUNICATOR_NOT_INITIALIZED,
 	INVALID_COMMAND,
 	SOCEK_IFNO_UNAVAILABLE,
-	UNKNOWN_ROOM
+	UNKNOWN_ROOM,
+	UNKNOW_PARAMETER
 };
 
 class Errors
@@ -50,5 +51,6 @@ private:
 		{ ERROR_CODES::INVALID_COMMAND, "Byl zavolan neexistujici prikaz." },
 		{ ERROR_CODES::SOCEK_IFNO_UNAVAILABLE, "Nelze ziskat informace o socketu." },
 		{ ERROR_CODES::UNKNOWN_ROOM, "Pokus o pristup do neexistujici roomky" },
+		{ ERROR_CODES::UNKNOW_PARAMETER, "Použit neznámý parametr" },
 	};
 };

@@ -85,6 +85,8 @@ void ForcedExit()
 #include <netdb.h>
 #include <cstring>
 
+class Program
+{ };
 
 void ForcedExit()
 {
@@ -126,9 +128,9 @@ int main(int argc, char* argv[])
     argparse::ArgumentParser program("server_app", "1.0", argparse::default_arguments::none);
 
     std::string adress = "0.0.0.0";
-    uint32_t port = 7890;
-    uint32_t maxRooms = 20;
-    uint32_t maxPlayers = 50;
+    int port = 7890;
+    int maxRooms = 1;
+    int maxPlayers = 2;
 
     program.add_argument("-h", "--help")
         .action([&] (const std::string&)
@@ -141,7 +143,7 @@ int main(int argc, char* argv[])
         .help("Zde je váš vlastní text nápovìdy");
 
     program.add_argument("-i", "--ip")
-        .default_value(port)
+        .default_value(adress)
         .help("IP adresa (default: 0.0.0.0)")
         .action([adress] (const std::string& value)
             {
@@ -149,9 +151,9 @@ int main(int argc, char* argv[])
             });
 
     program.add_argument("-p", "--port")
-        .default_value(port)
+        .default_value(7890)
         .help("Port (default: 7890)")
-        .action([port] (const std::string& value) -> uint32_t
+        .action([port] (const std::string& value) -> int
             {
                 try
                 {
@@ -169,9 +171,9 @@ int main(int argc, char* argv[])
         .help("Maximální poèet roomek")
         .action([maxRooms] (const std::string& value)
             {
-                uint32_t v = Utils::Str2Uint(value);
+                int v = Utils::Str2Uint(value);
 
-                return v > 1 && v < 100 ? v : maxRooms;
+                return v >= 1 && v <= 100 ? v : maxRooms;
             });
 
     program.add_argument("-c", "--max-clients")
@@ -179,12 +181,33 @@ int main(int argc, char* argv[])
         .help("Maximální poèet hráèù")
         .action([maxPlayers] (const std::string& value)
             {
-                uint32_t v = Utils::Str2Uint(value);
+                int v = Utils::Str2Uint(value);
 
-                return v > 2 && v < 300 ? v : maxPlayers;
+                return v >= 2 && v <= 300 ? v : maxPlayers;
             });
 
     Logger::init("log.log");
+
+    try
+    {
+        program.parse_args(argc, argv);
+    }
+    catch (const std::runtime_error& err)
+    {
+        Logger::LogError<Program>(ERROR_CODES::UNKNOW_PARAMETER);
+        return 1;
+    }
+
+    adress = program.get<std::string>("--ip");
+    port = program.get<int>("--port");
+    maxRooms = program.get<int>("--max-rooms");
+    maxPlayers = program.get<int>("--max-clients");
+
+    Logger::LogMessage<Program>("Pouzita IP:\t" + adress);
+    Logger::LogMessage<Program>("Pouziy port:\t" + std::to_string(port));
+    Logger::LogMessage<Program>("Max roomek:\t" + std::to_string(maxRooms));
+    Logger::LogMessage<Program>("Max hracu:\t" + std::to_string(maxPlayers));
+
 
     if (argc >= 3)
     {
