@@ -14,8 +14,8 @@ public:
 	void Stop();
 
 	void ConnectToMessageManager(MessageManager& comunicator);
-	void CreateDemand(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t)> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode);
-	void SendResponse(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t)> onTimeout);
+	void CreateDemand(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t, uint32_t)> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode);
+	void SendResponse(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t, uint32_t)> onTimeout);
 	void RegisterProcessingFunction(std::function<void(std::shared_ptr<IncomingRequest>)> processingFunction);
 
 private:

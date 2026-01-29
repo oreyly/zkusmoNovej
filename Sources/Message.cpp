@@ -8,7 +8,7 @@ IncomingMessage::IncomingMessage(const Packet& packet, const sockaddr_in& client
 
 }
 
-OutgoingMessage::OutgoingMessage(const Packet& mainPacket, const sockaddr_in& clientAddr, const std::function<void(uint32_t)> onTimeout) : MainPacket(mainPacket), ClientAddres(clientAddr), _attempts(0), _onTimeout(onTimeout)
+OutgoingMessage::OutgoingMessage(const Packet& mainPacket, const sockaddr_in& clientAddr, const std::function<void(uint32_t, uint32_t)> onTimeout) : MainPacket(mainPacket), ClientAddres(clientAddr), _attempts(0), _onTimeout(onTimeout)
 { }
 
 OutgoingMessage::~OutgoingMessage()
@@ -73,7 +73,7 @@ void OutgoingMessage::WaitForAck()
 
     std::unique_lock<std::mutex> lock(_ackMutex);
 
-    while (!_finished.load(std::memory_order_acquire) && _attempts < _maxAttempts)
+    while (!_finished.load(std::memory_order_acquire) && _attempts <= _maxAttempts)
     {
         _cvAck.wait_for(lock, std::chrono::milliseconds(_timeout), [this] ()
             {
@@ -87,9 +87,14 @@ void OutgoingMessage::WaitForAck()
 
         Logger::LogError<OutgoingMessage>(ERROR_CODES::MISSING_ACKNOWLEDGEMENT, LOG_LEVEL::WARNING);
 
-        ++_attempts;
+        if (++_attempts >= _maxAttempts)
+        {
+            break;
+        }
+
+        Logger::LogMessage<OutgoingMessage>("Posilam packet: " + MainPacket.CreateString());
         _messageManager->get().SendPacket(ClientAddres, MainPacket);
     }
 
-    _onTimeout(MainPacket.ClientId);
+    _onTimeout(MainPacket.ClientId, MainPacket.ConnectionID);
 }

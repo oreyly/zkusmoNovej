@@ -8,10 +8,6 @@
 #include <numeric>
 #include <random>
 
-#ifndef BIND_TIMEOUT
-#define BIND_TIMEOUT [this](uint32_t id) { OnTimeout(id); }
-#endif
-
 
 GameLobby::GameLobby(std::string address, uint32_t port, uint32_t maxRooms, uint32_t maxPlayers) : _maxRooms(maxRooms), _maxPlayers(maxPlayers)
 {
@@ -21,7 +17,7 @@ GameLobby::GameLobby(std::string address, uint32_t port, uint32_t maxRooms, uint
     _messageManager = std::make_unique<MessageManager>();
     _requestManager = std::make_unique<RequestManager>(5000);
 
-    _messageManager->ConnectToComunicator(*_comunicator, 2000, 3);
+    _messageManager->ConnectToComunicator(*_comunicator, 5000, 1);
     _requestManager->ConnectToMessageManager(*_messageManager);
     _requestManager->RegisterProcessingFunction([this] (std::shared_ptr<IncomingRequest> incomingRequest)
         {
@@ -120,6 +116,8 @@ void GameLobby::CommandLoop()
 
         ProcessCommand(vstup);
     }
+
+    Logger::LogMessage<GameLobby>("GameLobby byla ukoncena");
 }
 
 void GameLobby::PingLoop()
@@ -130,11 +128,6 @@ void GameLobby::PingLoop()
 
         {
             std::lock_guard<std::mutex> lock(_clientsMutex);
-            PingClients();
-        }
-
-        {
-            std::lock_guard<std::mutex> lock(_clientsMutex);
             CheckClients();
         }
     }
@@ -142,36 +135,78 @@ void GameLobby::PingLoop()
 
 void GameLobby::PingClients()
 {
-    for (auto [id, client] : _clients)
-    {
-        if (!client.Online)
-        {
-            continue;
-        }
 
-        _requestManager->CreateDemand(client, OPCODE::PING, {}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
-            {
-                PlayerKnowResult(std::move(ir));
-            }, OPCODE::I_SEE_YOU
-        );
-    }
 }
 
 void GameLobby::CheckClients()
 {
     std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 
-    for (auto [id, client] : _clients)
+    for (auto& [id, client] : _clients)
     {
-        if (!client.Online)
+        auto elapsedTime = now - client.LastEcho;
+
+        if (!client.Online && client.GameRoomId != 0 && elapsedTime > std::chrono::seconds(40))
         {
+            uint32_t roomId = client.GameRoomId;
+            uint32_t otherPlayerId = _gameRooms.at(roomId)->GetOtherPlayerId(client.Id);
+
+            client.AssignRoom(0);
+            _gameRooms.at(roomId)->RemovePlayer(client.Id);
+
+            if (otherPlayerId == 0)
+            {
+                _gameRooms.erase(roomId);
+                continue;
+            }
+
+            if (!_gameRooms.at(roomId)->IsInitialPosition())
+            {
+                _gameRooms.at(roomId)->SetGameEnd(_gameRooms.at(roomId)->GetPlayerColor(otherPlayerId) == PLAYER_COLOR::WHITE ? GAME_STATE::WHITE_WIN : GAME_STATE::BLACK_WIN);
+            }
+
+            if (!_clients.at(otherPlayerId).Online)
+            {
+                continue;
+            }
+
+            if (_gameRooms.at(roomId)->IsInitialPosition())
+            {
+                _requestManager->CreateDemand(
+                    _clients.at(otherPlayerId),
+                    OPCODE::OPPONENT_ARRIVED,
+                    {""},
+                    BIND_TIMEOUT,
+                    [this] (std::unique_ptr<IncomingRequest> ir)
+                    {
+                        PlayerGotOpponent(std::move(ir));
+                    }, OPCODE::KNOW_ABOUT_HIM
+                );
+                continue;
+            }
+
+            _requestManager->CreateDemand(
+                _clients.at(otherPlayerId),
+                OPCODE::GAME_FINISHED,
+                {std::to_string(static_cast<uint32_t>(_gameRooms.at(roomId)->GetGameState()))},
+                BIND_TIMEOUT,
+                [this] (std::unique_ptr<IncomingRequest> ir)
+                {
+                    PlayerKnowResult(std::move(ir));
+                }, OPCODE::FINALY_END
+            );
             continue;
         }
 
-        if (now - client.LastEcho > std::chrono::seconds(5))
+        if (!client.Pinged && elapsedTime > std::chrono::seconds(3))
         {
-            std::cout << "Vypinam" << std::endl;
-            client.Online = false;
+            client.Pinged = true;
+
+            _requestManager->CreateDemand(client, OPCODE::PING, {}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+                {
+                    ClientPinged(std::move(ir));
+                }, OPCODE::I_SEE_YOU
+            );
         }
     }
 }
@@ -210,7 +245,7 @@ void GameLobby::ProcessCommand(std::string& command)
 
         for (const auto& [id, room] : _gameRooms)
         {
-            ss << "Room: " << id << "\t Bily: " << std::to_string(room->GetWhiteId()) << "\t Cerny: " << std::to_string(room->GetWhiteId()) << "\n";
+            ss << "Room: " << id << "\t Bily: " << std::to_string(room->GetWhiteId()) << "\t Cerny: " << std::to_string(room->GetBlackId()) << "\n";
         }
 
         Logger::LogMessage<GameLobby>(ss.str());
@@ -231,6 +266,12 @@ void GameLobby::PrepareHandler()
     _handlers[OPCODE::I_MOVED] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { PlayedMove(incomingRequest); };
     _handlers[OPCODE::AM_LEAVING] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { PlayerLeave(incomingRequest); };
     _handlers[OPCODE::GAME_QUIT] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { PlayerQuit(incomingRequest); };
+    _handlers[OPCODE::RECON] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { ReconnectPlayer(incomingRequest); };
+    _handlers[OPCODE::WHAT_HAPPEND] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { SendLastMove(incomingRequest); };
+    _handlers[OPCODE::IS_HE_ALIVE] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { OtherStatus(incomingRequest); };
+    _handlers[OPCODE::AM_I_PLAYING] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { IsPlayerInGame(incomingRequest); };
+    _handlers[OPCODE::GET_POSITION] = [this] (std::shared_ptr<IncomingRequest>& incomingRequest) { SendBoard(incomingRequest); };
+
 }
 
 void GameLobby::AddIncomingRequest(std::shared_ptr<IncomingRequest> incomingRequest)
@@ -275,7 +316,7 @@ void GameLobby::MainLoop()
     }
 }
 
-void GameLobby::OnTimeout(uint32_t id)
+void GameLobby::OnTimeout(uint32_t id, uint32_t connectionId)
 {
     {
         std::lock_guard<std::mutex> lock(_clientsMutex);
@@ -288,251 +329,30 @@ void GameLobby::OnTimeout(uint32_t id)
             return;
         }
 
-        _clients.at(id).Online = false;
-    }
-}
-
-void GameLobby::RegisterClient(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    Client newClient(incomingRequest->SourceAddress);
-
-    if (_clients.size() >= _maxPlayers)
-    {
-        _requestManager->SendResponse(newClient, OPCODE::CON_AS, {std::to_string(0)}, BIND_TIMEOUT);
-        return;
-    }
-
-    _requestManager->SendResponse(newClient, OPCODE::CON_AS, {std::to_string(newClient.Id)}, BIND_TIMEOUT);
-
-    _clients.try_emplace(newClient.Id, newClient);
-}
-
-void GameLobby::AssignName(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    for (const auto& [id, client] : _clients)
-    {
-        if (client.Name == incomingRequest->Parameters[0])
+        if (!_clients.at(id).Online || _clients.at(id).ConnectionID != connectionId)
         {
-            _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::VALID_NAME, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
             return;
         }
-    }
 
-    _clients.at(incomingRequest->ClientId).Name = incomingRequest->Parameters[0];
-    _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::VALID_NAME, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE))}, BIND_TIMEOUT);
-}
+        _clients.at(id).Online = false;
 
-void GameLobby::ListRooms(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    std::vector<std::string> roomList;
-    roomList.reserve(_gameRooms.size() * 3);
 
-    for (const auto& [_, gr] : _gameRooms)
-    {
-        roomList.push_back(std::to_string(gr->Id));
-        roomList.push_back(std::to_string(static_cast<uint32_t>(gr->GetWhiteId() > 0 ? GAME_BOOL::TRUE : GAME_BOOL::FALSE)));
-        roomList.push_back(std::to_string(static_cast<uint32_t>(gr->GetBlackId() > 0 ? GAME_BOOL::TRUE : GAME_BOOL::FALSE)));
-    }
-
-    _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::ROOM_LIST, roomList, BIND_TIMEOUT);
-}
-
-void GameLobby::CreateRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    if (_gameRooms.size() >= _maxRooms)
-    {
-        _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::ROOM_CREATED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
-        return;
-    }
-
-    std::unique_ptr<GameRoom> room = std::make_unique<GameRoom>();
-
-    switch (PLAYER_COLOR(Utils::Str2Uint(incomingRequest->Parameters[0])))
-    {
-        case PLAYER_COLOR::BLACK:
-            room->SetBlackId(incomingRequest.get()->ClientId);
-            break;
-        case PLAYER_COLOR::WHITE:
-            room->SetWhiteId(incomingRequest.get()->ClientId);
-            break;
-        default:
-            break;
-    }
-
-    _clients.at(incomingRequest.get()->ClientId).AssignRoom(room->Id);
-    _gameRooms.emplace(room->Id, std::move(room));
-
-    _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::ROOM_CREATED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE))}, BIND_TIMEOUT);
-}
-
-void GameLobby::JoinRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    uint32_t roomId = Utils::Str2Uint(incomingRequest->Parameters[0]);
-    PLAYER_COLOR playerColor = static_cast<PLAYER_COLOR>(Utils::Str2Uint(incomingRequest->Parameters[1]));
-
-    auto demandedRoom = _gameRooms.find(roomId);
-
-    if (demandedRoom == _gameRooms.end() || demandedRoom->second.get()->GetPlayerId(playerColor) > 0)
-    {
-        _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::GOT_TO_ROOM, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
-        return;
-    }
-
-    demandedRoom->second.get()->SetPlayerId(playerColor, incomingRequest.get()->ClientId);
-    _clients.at(incomingRequest.get()->ClientId).AssignRoom(roomId);
-
-    std::string oponentName = _clients.at(demandedRoom->second.get()->GetPlayerId(!playerColor)).Name;
-
-    _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::GOT_TO_ROOM, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE)), oponentName}, BIND_TIMEOUT);
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second.get()->GetPlayerId(!playerColor)), OPCODE::OPPONENT_ARRIVED, {_clients.at(incomingRequest->ClientId).Name}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+        if (_clients.at(id).GameRoomId == 0)
         {
-            PlayerGotOpponent(std::move(ir));
-        },OPCODE::KNOW_ABOUT_HIM);
-}
+            return;
+        }
 
+        uint32_t othreId = _gameRooms.at(_clients.at(id).GameRoomId)->GetOtherPlayerId(id);
 
-void GameLobby::PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    uint32_t roomId = _clients.at(incomingRequest->ClientId).GameRoomId;
-
-    auto demandedRoom = _gameRooms.find(roomId);
-
-    if (demandedRoom == _gameRooms.end())
-    {
-        _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_MOVED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
-        return;
-    }
-
-    if (!demandedRoom->second->PlayMove(Utils::Str2Uint(incomingRequest->Parameters[0]), Utils::Str2Uint(incomingRequest->Parameters[1]), Utils::Str2Uint(incomingRequest->Parameters[2]), Utils::Str2Uint(incomingRequest->Parameters[3])))
-    {
-        _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::YOU_MOVED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
-        return;
-    }
-
-    _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_MOVED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE))}, BIND_TIMEOUT);
-
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetOtherPlayerId(incomingRequest->ClientId)), OPCODE::HE_MOVED, incomingRequest->Parameters, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
+        if (othreId == 0)
         {
-            PlayerGotMove(std::move(ir));
-        }, OPCODE::I_KNOW_HE_MOVED);
+            return;
+        }
 
-
-    GAME_STATE gameState = demandedRoom->second->GetGameState();
-    if (gameState == GAME_STATE::IN_PROGRESS)
-    {
-        return;
-    }
-
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetWhiteId()), OPCODE::GAME_FINISHED, {std::to_string(static_cast<uint32_t>(gameState))}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
-        {
-            PlayerKnowResult(std::move(ir));
-        }, OPCODE::FINALY_END);
-
-    _requestManager->CreateDemand(_clients.at(demandedRoom->second->GetBlackId()), OPCODE::GAME_FINISHED, {std::to_string(static_cast<uint32_t>(gameState))}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
-        {
-            PlayerKnowResult(std::move(ir));
-        }, OPCODE::FINALY_END);
-
-    _clients.at(demandedRoom->second->GetWhiteId()).AssignRoom(0);
-    _clients.at(demandedRoom->second->GetBlackId()).AssignRoom(0);
-
-    _gameRooms.erase(demandedRoom->second->Id);
-}
-
-
-void GameLobby::PlayerLeave(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_LEFT, {}, BIND_TIMEOUT);
-    _clients.at(incomingRequest->ClientId).Online = false;
-}
-
-void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
-{
-    _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::GAME_QUITED, {}, BIND_TIMEOUT);
-
-    auto demandedRoom = _gameRooms.find(_clients.at(incomingRequest->ClientId).GameRoomId);
-
-    if (demandedRoom == _gameRooms.end())
-    {
-        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_ROOM);
-        return;
-    }
-
-    uint32_t roomId = demandedRoom->first;
-
-    int otherPlayerId = _gameRooms.at(roomId)->GetOtherPlayerId(incomingRequest->ClientId);
-
-    _clients.at(incomingRequest->ClientId).AssignRoom(0);
-    _gameRooms.at(roomId)->RemovePlayer(incomingRequest->ClientId);
-
-    if (otherPlayerId == 0)
-    {
-        _gameRooms.erase(roomId);
-        return;
-    }
-
-    if (_gameRooms.at(roomId)->IsInitialPosition())
-    {
-        _requestManager->CreateDemand(
-            _clients.at(otherPlayerId),
-            OPCODE::OPPONENT_ARRIVED,
-            {""},
-            BIND_TIMEOUT,
-            [this] (std::unique_ptr<IncomingRequest> ir)
+        _requestManager->CreateDemand(_clients.at(othreId), OPCODE::HES_MISSING, {std::to_string(static_cast<uint32_t>(GAME_BOOL::TRUE))}, BIND_TIMEOUT, [this] (std::unique_ptr<IncomingRequest> ir)
             {
-                PlayerGotOpponent(std::move(ir));
-            }, OPCODE::KNOW_ABOUT_HIM
+                PlayerKnowOthreMissing(std::move(ir));
+            }, OPCODE::THATS_A_SHAME
         );
-        return;
-    }
-
-    _requestManager->CreateDemand(
-        _clients.at(otherPlayerId),
-        OPCODE::GAME_FINISHED,
-        {std::to_string(static_cast<uint32_t>(_gameRooms.at(roomId)->GetPlayerColor(incomingRequest->ClientId) == PLAYER_COLOR::WHITE ? GAME_STATE::BLACK_WIN : GAME_STATE::WHITE_WIN))},
-        BIND_TIMEOUT,
-        [this] (std::unique_ptr<IncomingRequest> ir)
-        {
-            PlayerKnowResult(std::move(ir));
-        }, OPCODE::FINALY_END
-    );
-
-    _clients.at(otherPlayerId).AssignRoom(0);
-    _gameRooms.erase(_gameRooms.at(roomId)->Id);
-}
-
-void GameLobby::ClientPinged(std::unique_ptr<IncomingRequest> incomingRequest)
-{
-    {
-        std::lock_guard<std::mutex> lock(_clientsMutex);
-
-        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
-    }
-}
-
-void GameLobby::PlayerGotOpponent(std::unique_ptr<IncomingRequest> incomingRequest)
-{
-    {
-        std::lock_guard<std::mutex> lock(_clientsMutex);
-
-        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
-    }
-}
-
-void GameLobby::PlayerGotMove(std::unique_ptr<IncomingRequest> incomingRequest)
-{
-    {
-        std::lock_guard<std::mutex> lock(_clientsMutex);
-
-        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
-    }
-}
-
-void GameLobby::PlayerKnowResult(std::unique_ptr<IncomingRequest> incomingRequest)
-{
-    {
-        std::lock_guard<std::mutex> lock(_clientsMutex);
-
-        _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
     }
 }

@@ -23,7 +23,9 @@ enum class ERROR_CODES : uint32_t
 	INVALID_COMMAND,
 	SOCEK_IFNO_UNAVAILABLE,
 	UNKNOWN_ROOM,
-	UNKNOW_PARAMETER
+	UNKNOW_PARAMETER,
+	UNKNOWN_GAME_STATE,
+	NOT_GAME_END_STATE
 };
 
 class Errors
@@ -45,12 +47,14 @@ private:
 		{ ERROR_CODES::MISSING_ACKNOWLEDGEMENT, "Nebyla prijata odpoved na zpravu." },
 		{ ERROR_CODES::ALREAD_REGISTERED, "Objekt nelze zaregistrovat, jelikoz uz byl jednou registrovan." },
 		{ ERROR_CODES::ALREADY_CONNECTED_MANAGER, "Pripojeny manazer se snazi opet pripojit ke zdroji." },
-		{ ERROR_CODES::UNKNOWN_ORIGIN, "Pøišel packet s neznamym puvodem." },
+		{ ERROR_CODES::UNKNOWN_ORIGIN, "Prisel packet s neznamym puvodem." },
 		{ ERROR_CODES::RESPONSE_TO_UNKNOWN_REQUEST, "Aplikace se snazi odpovedet na neexistujici pozadavek." },
 		{ ERROR_CODES::COMMUNICATOR_NOT_INITIALIZED, "Pokus o pouziti komunikatoru, ktery jeste nebyl inicializovan." },
 		{ ERROR_CODES::INVALID_COMMAND, "Byl zavolan neexistujici prikaz." },
 		{ ERROR_CODES::SOCEK_IFNO_UNAVAILABLE, "Nelze ziskat informace o socketu." },
 		{ ERROR_CODES::UNKNOWN_ROOM, "Pokus o pristup do neexistujici roomky" },
-		{ ERROR_CODES::UNKNOW_PARAMETER, "Použit neznámý parametr" },
+		{ ERROR_CODES::UNKNOW_PARAMETER, "Pouzit neznamy parametr" },
+		{ ERROR_CODES::UNKNOWN_GAME_STATE, "Hra se dostala do neidentifikovatelneho stavu" },
+		{ ERROR_CODES::NOT_GAME_END_STATE, "Pokus o nastaveni konce hry nekoncicim stavem" },
 	};
 };

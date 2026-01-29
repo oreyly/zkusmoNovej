@@ -1,4 +1,7 @@
 #include "Chessboard.h"
+
+#include "Utils.h"
+
 #include <cmath>
 
 Chessboard::Chessboard()
@@ -188,6 +191,11 @@ void Chessboard::print() const
 
 GAME_STATE Chessboard::GetGameState() const
 {
+    if (InitialPosition)
+    {
+        return GAME_STATE::PRE_GAME;
+    }
+
     bool whiteHasFigs = false;
     bool blackHasFigs = false;
 
@@ -225,4 +233,53 @@ GAME_STATE Chessboard::GetGameState() const
     }
 
     return GAME_STATE::DRAW;
+}
+
+std::string Chessboard::GetPositionString() const
+{
+    std::string bytes(12, 0);
+    int currentBit = 0;
+
+    for (int r = 0; r < SIZE; ++r)
+    {
+        for (int c = 0; c < SIZE; ++c)
+        {
+            if ((r + c) % 2 != 0)
+            {
+                uint8_t value = 0;
+                auto piece = board[r][c];
+
+                if (piece.has_value())
+                {
+                    if (piece->owner == PLAYER_COLOR::WHITE)
+                    {
+                        value = (piece->type == PIECE_TYPE::MAN) ? 0b101 : 0b110;
+                    }
+                    else
+                    {
+                        value = (piece->type == PIECE_TYPE::MAN) ? 0b001 : 0b010;
+                    }
+                }
+                else
+                {
+                    value = 0b000;
+                }
+
+                // Zápis 3 bitù do 12bajtového pole
+                for (int i = 2; i >= 0; --i)
+                {
+                    int byteIdx = currentBit / 8;
+                    int bitIdx = 7 - (currentBit % 8);
+
+                    if ((value >> i) & 1)
+                    {
+                        bytes[byteIdx] |= (1 << bitIdx);
+                    }
+                    currentBit++;
+                }
+            }
+        }
+    }
+
+    return Utils::Base64Encode(bytes);
 }

@@ -146,10 +146,6 @@ void Comunicator::Listener::MainLoop()
         {
             std::string message(buffer, received);
 
-            Logger::LogMessage<Comunicator>("Prijmuta zprava: \"" + message + "\" z adresy: " +
-                inet_ntoa(sourceClient.sin_addr) + ":" +
-                std::to_string(ntohs(sourceClient.sin_port)));
-
             if (_recieverFunction)
             {
                 _recieverFunction(sourceClient, message);

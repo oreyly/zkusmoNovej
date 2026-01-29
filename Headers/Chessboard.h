@@ -40,6 +40,8 @@ public:
         return currentPlayer;
     }
 
+    std::string GetPositionString() const;
+
 private:
     std::optional<Piece> board[SIZE][SIZE];
     PLAYER_COLOR currentPlayer;

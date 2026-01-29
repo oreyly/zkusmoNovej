@@ -4,12 +4,12 @@
 
 #include <iostream>
 
-OutgoingRequest::OutgoingRequest(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void(uint32_t)> onFailure, std::function<void(const std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode) : _timeout(timeout), _expectedOpcode(expectedOpcode), _onFailure(onFailure), _onSuccess(onSuccess)
+OutgoingRequest::OutgoingRequest(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, const uint32_t timeout, std::function<void(uint32_t, uint32_t)> onFailure, std::function<void(const std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode) : _timeout(timeout), _expectedOpcode(expectedOpcode), _onFailure(onFailure), _onSuccess(onSuccess)
 {
 	_waiting.store(false, std::memory_order_release);
 	_hasResult.store(false, std::memory_order_release);
-	Packet p(client.Id, ORIGIN::SERVER, opcode, params);
-	DemandMessage = std::make_shared<OutgoingMessage>(p, client.Addr, [this] (uint32_t id)
+	Packet p(client.Id, client.ConnectionID, ORIGIN::SERVER, opcode, params);
+	DemandMessage = std::make_shared<OutgoingMessage>(p, client.Addr, [this] (uint32_t id, uint32_t connectionId)
 		{
 			if (_hasResult.load(std::memory_order_acquire))
 			{
@@ -18,7 +18,6 @@ OutgoingRequest::OutgoingRequest(const Client& client, const OPCODE opcode, cons
 
 			_waiting.store(false, std::memory_order_release);
 			_cvRes.notify_one();
-			_onFailure(id);
 		});
 }
 
@@ -77,7 +76,7 @@ void OutgoingRequest::WaitForResponse()
 	if (!_hasResult.load(std::memory_order_acquire))
 	{
 		_waiting.store(false, std::memory_order_release);
-		_onFailure(DemandMessage->MainPacket.ClientId);
+		_onFailure(DemandMessage->MainPacket.ClientId, DemandMessage->MainPacket.ConnectionID);
 		return;
 	}
 

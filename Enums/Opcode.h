@@ -43,4 +43,22 @@ enum class OPCODE : uint32_t
 
     PING,
     I_SEE_YOU,
+
+    RECON,
+    RECON_AS,
+
+    WHAT_HAPPEND,
+    THIS_HAPPEND,
+
+    HES_MISSING,
+    THATS_A_SHAME,
+
+    IS_HE_ALIVE,
+    HE_IS_ALIVE,
+
+    AM_I_PLAYING,
+    YOU_PLAY,
+
+    GET_POSITION,
+    HERE_POSITION
 };

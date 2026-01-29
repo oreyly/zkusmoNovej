@@ -2,9 +2,13 @@
 
 #include "Logger.h"
 
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
 MessageManager::MessageManager()
 {
-	Logger::LogMessage<MessageManager>("Vytvořen MessageManager.");
+	Logger::LogMessage<MessageManager>("Vytvoren MessageManager.");
 }
 
 MessageManager::~MessageManager()
@@ -70,7 +74,7 @@ void MessageManager::ConnectToComunicator(Comunicator& comunicator, const uint32
 			OnStringRecieve(targetAddr, message);
 		});
 
-	Logger::LogMessage<MessageManager>("MessageManager připojen ke komunikátoru.");
+	Logger::LogMessage<MessageManager>("MessageManager pripojen ke komunikatoru.");
 }
 
 void MessageManager::RegisterProcessingFunction(std::function<void(IncomingMessage&)> processingFunction)
@@ -180,6 +184,10 @@ void MessageManager::MainLoop()
 			continue;
 		}
 
+		Logger::LogMessage<MessageManager>("Prijmuta zprava: \"" + message + "\" z adresy: " +
+			inet_ntoa(sourceAddr.sin_addr) + ":" +
+			std::to_string(ntohs(sourceAddr.sin_port)));
+
 		if (recievedPacket.Opcode == OPCODE::ACK)
 		{
 			{
@@ -212,7 +220,7 @@ void MessageManager::MainLoop()
 
 		IncomingMessage incommingMessage(recievedPacket, sourceAddr);
 		ConfirmReceiving(incommingMessage);
-
+		std::cout << "Konf: " + recievedPacket.CreateString() << std::endl;
 		{
 			std::scoped_lock lock(_incomingMutex, _finishedMutex);
 
@@ -236,5 +244,5 @@ void MessageManager::MainLoop()
 
 void MessageManager::ConfirmReceiving(IncomingMessage& incomingMessage)
 {
-	SendPacket(incomingMessage.ClientAddres, Packet(incomingMessage.MainPacket.Id,incomingMessage.MainPacket.ClientId, incomingMessage.MainPacket.RequestOrigin, OPCODE::ACK));
+	SendPacket(incomingMessage.ClientAddres, Packet(incomingMessage.MainPacket.Id,incomingMessage.MainPacket.ClientId, incomingMessage.MainPacket.ConnectionID, incomingMessage.MainPacket.RequestOrigin, OPCODE::ACK));
 }

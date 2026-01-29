@@ -9,6 +9,9 @@
 #include <vector>
 #include <memory>
 
+#ifndef BIND_TIMEOUT
+#define BIND_TIMEOUT [this](uint32_t id, uint32_t connectionId) { OnTimeout(id, connectionId); }
+#endif
 
 class GameLobby
 {
@@ -59,7 +62,7 @@ private:
     void PrepareHandler();
     void AddIncomingRequest(std::shared_ptr<IncomingRequest> incomingRequest);
     void MainLoop();
-    void OnTimeout(uint32_t id);
+    void OnTimeout(uint32_t id, uint32_t connectionId);
 
     void RegisterClient(std::shared_ptr<IncomingRequest>& incomingRequest);
     void AssignName(std::shared_ptr<IncomingRequest>& incomingRequest);
@@ -69,9 +72,15 @@ private:
     void PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest);
     void PlayerLeave(std::shared_ptr<IncomingRequest>& incomingRequest);
     void PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest);
+    void ReconnectPlayer(std::shared_ptr<IncomingRequest>& incomingRequest);
+    void SendLastMove(std::shared_ptr<IncomingRequest>& incomingRequest);
+    void OtherStatus(std::shared_ptr<IncomingRequest>& incomingRequest);
+    void IsPlayerInGame(std::shared_ptr<IncomingRequest>& incomingRequest);
+    void SendBoard(std::shared_ptr<IncomingRequest>& incomingRequest);
 
     void ClientPinged(std::unique_ptr<IncomingRequest> incomingRequest);
     void PlayerGotOpponent(std::unique_ptr<IncomingRequest> incomingRequest);
     void PlayerGotMove(std::unique_ptr<IncomingRequest> incomingRequest);
     void PlayerKnowResult(std::unique_ptr<IncomingRequest> incomingRequest);
+    void PlayerKnowOthreMissing(std::unique_ptr<IncomingRequest> incomingRequest);
 };

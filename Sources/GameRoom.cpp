@@ -1,9 +1,13 @@
 #include "GameRoom.h"
 
+#include "Logger.h"
+
 GameRoom::GameRoom() : Id(NextId())
 {
 	_players[PLAYER_COLOR::WHITE] = 0;
 	_players[PLAYER_COLOR::BLACK] = 0;
+
+	_manualyEnd = false;
 }
 
 uint32_t GameRoom::GetWhiteId()
@@ -64,12 +68,55 @@ void GameRoom::RemovePlayer(uint32_t id)
 
 bool GameRoom::PlayMove(uint32_t startX, uint32_t startY, uint32_t endX, uint32_t endY)
 {
-	return _chessboard.movePiece({static_cast<int>(startX), static_cast<int>(startY)}, {static_cast<int>(endX), static_cast<int>(endY)});
+	if (_chessboard.movePiece({static_cast<int>(startX), static_cast<int>(startY)}, {static_cast<int>(endX), static_cast<int>(endY)}))
+	{
+		LastMove = {{static_cast<int>(startX), static_cast<int>(startY)}, {static_cast<int>(endX), static_cast<int>(endY)}};
+		return true;
+	}
+
+	return false;
 }
 
 GAME_STATE GameRoom::GetGameState()
 {
+	if (_manualyEnd)
+	{
+		return _gameState;
+	}
+
 	return _chessboard.GetGameState();
+}
+
+void GameRoom::SetGameEnd(GAME_STATE gameState)
+{
+	_manualyEnd = true;
+
+	switch (gameState)
+	{
+		case GAME_STATE::IN_PROGRESS:
+		case GAME_STATE::PRE_GAME:
+			Logger::LogError<GameRoom>(ERROR_CODES::NOT_GAME_END_STATE);
+			break;
+		case GAME_STATE::WHITE_WIN:
+		case GAME_STATE::BLACK_WIN:
+		case GAME_STATE::DRAW:
+			break;
+		default:
+			Logger::LogError<GameRoom>(ERROR_CODES::UNKNOWN_GAME_STATE);
+			break;
+	}
+
+	_gameState = gameState;
+}
+
+std::string GameRoom::GetPositionString() const
+{
+	return _chessboard.GetPositionString();
+}
+
+PLAYER_COLOR GameRoom::GetActualPlayer() const
+{
+	return _chessboard.getCurrentPlayer();
 }
 
 uint32_t GameRoom::NextId()

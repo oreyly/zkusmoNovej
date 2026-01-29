@@ -29,7 +29,7 @@ void RequestManager::Stop()
 }
 
 
-void RequestManager::CreateDemand(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t)> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode)
+void RequestManager::CreateDemand(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t, uint32_t)> onFailure, std::function<void(std::unique_ptr<IncomingRequest>)> onSuccess, const OPCODE expectedOpcode)
 {
 	{
 		std::lock_guard<std::mutex> lock(_queueMutex);
@@ -40,9 +40,9 @@ void RequestManager::CreateDemand(Client& client, const OPCODE opcode, const std
 	_cvQueue.notify_one();
 }
 
-void RequestManager::SendResponse(Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t)> onTimeout)
+void RequestManager::SendResponse(const Client& client, const OPCODE opcode, const std::vector<std::string>& params, std::function<void(uint32_t, uint32_t)> onTimeout)
 {
-	_messageManager->get().SendMessage(std::make_shared<OutgoingMessage>(Packet(client.Id, ORIGIN::CLIENT, opcode, params), client.Addr, onTimeout));
+	_messageManager->get().SendMessage(std::make_shared<OutgoingMessage>(Packet(client.Id, client.ConnectionID, ORIGIN::CLIENT, opcode, params), client.Addr, onTimeout));
 }
 
 void RequestManager::RegisterProcessingFunction(std::function<void(std::shared_ptr<IncomingRequest>)> processingFunction)
