@@ -25,7 +25,10 @@ enum class ERROR_CODES : uint32_t
 	UNKNOWN_ROOM,
 	UNKNOW_PARAMETER,
 	UNKNOWN_GAME_STATE,
-	NOT_GAME_END_STATE
+	NOT_GAME_END_STATE,
+	UNKNOWN_USER,
+	BAD_PARAMETERS,
+	BAD_OPERATION
 };
 
 class Errors
@@ -56,5 +59,8 @@ private:
 		{ ERROR_CODES::UNKNOW_PARAMETER, "Pouzit neznamy parametr" },
 		{ ERROR_CODES::UNKNOWN_GAME_STATE, "Hra se dostala do neidentifikovatelneho stavu" },
 		{ ERROR_CODES::NOT_GAME_END_STATE, "Pokus o nastaveni konce hry nekoncicim stavem" },
+		{ ERROR_CODES::UNKNOWN_USER, "Prijat pozadavek od neregistrovaneho klienta" },
+		{ ERROR_CODES::BAD_PARAMETERS, "Prijaty pozadavek nema platne parametry" },
+		{ ERROR_CODES::BAD_OPERATION, "Klient vytvoril pozadavek, na ktery nema v aktualnim stavu narok" },
 	};
 };

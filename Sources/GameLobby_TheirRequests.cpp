@@ -2,6 +2,10 @@
 
 #include <Logger.h>
 
+#include "magic_enum.hpp"
+
+
+
 void GameLobby::RegisterClient(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
     Client newClient(incomingRequest->SourceAddress);
@@ -19,6 +23,23 @@ void GameLobby::RegisterClient(std::shared_ptr<IncomingRequest>& incomingRequest
 
 void GameLobby::AssignName(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    if (incomingRequest->Parameters.size() != 1 || incomingRequest->Parameters[0].length() < 1 || incomingRequest->Parameters[0].length() > 10 || !std::all_of(incomingRequest->Parameters[0].begin(), incomingRequest->Parameters[0].end(), [] (unsigned char c)
+        {
+            return std::isalnum(c);
+        }))
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
     for (auto& [id, client] : _clients)
     {
         if (client.Name == incomingRequest->Parameters[0])
@@ -48,6 +69,20 @@ void GameLobby::AssignName(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::ListRooms(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     std::vector<std::string> roomList;
     roomList.reserve(_gameRooms.size() * 3);
 
@@ -68,6 +103,40 @@ void GameLobby::ListRooms(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::CreateRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (demandedClient->second.GameRoomId != 0)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (incomingRequest->Parameters.size() != 1 || !Utils::IsUint(incomingRequest->Parameters[0]))
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
+    auto originCast = magic_enum::enum_cast<PLAYER_COLOR>(Utils::Str2Uint(incomingRequest->Parameters[0]));
+
+    if (!originCast.has_value())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
     if (_gameRooms.size() >= _maxRooms)
     {
         _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::ROOM_CREATED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
@@ -76,7 +145,7 @@ void GameLobby::CreateRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
 
     std::unique_ptr<GameRoom> room = std::make_unique<GameRoom>();
 
-    switch (PLAYER_COLOR(Utils::Str2Uint(incomingRequest->Parameters[0])))
+    switch (originCast.value())
     {
         case PLAYER_COLOR::BLACK:
             room->SetBlackId(incomingRequest.get()->ClientId);
@@ -96,8 +165,42 @@ void GameLobby::CreateRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::JoinRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (demandedClient->second.GameRoomId != 0)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (incomingRequest->Parameters.size() != 2 || !Utils::IsUint(incomingRequest->Parameters[0]) || !Utils::IsUint(incomingRequest->Parameters[1]))
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
+    auto originCast = magic_enum::enum_cast<PLAYER_COLOR>(Utils::Str2Uint(incomingRequest->Parameters[1]));
+
+    if (!originCast.has_value())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
     uint32_t roomId = Utils::Str2Uint(incomingRequest->Parameters[0]);
-    PLAYER_COLOR playerColor = static_cast<PLAYER_COLOR>(Utils::Str2Uint(incomingRequest->Parameters[1]));
+    PLAYER_COLOR playerColor = originCast.value();
 
     auto demandedRoom = _gameRooms.find(roomId);
 
@@ -121,17 +224,55 @@ void GameLobby::JoinRoom(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     uint32_t roomId = _clients.at(incomingRequest->ClientId).GameRoomId;
 
     auto demandedRoom = _gameRooms.find(roomId);
 
     if (demandedRoom == _gameRooms.end())
     {
-        _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_MOVED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
         return;
     }
 
-    if (!demandedRoom->second->PlayMove(Utils::Str2Uint(incomingRequest->Parameters[0]), Utils::Str2Uint(incomingRequest->Parameters[1]), Utils::Str2Uint(incomingRequest->Parameters[2]), Utils::Str2Uint(incomingRequest->Parameters[3])))
+    if (demandedClient->second.GameRoomId != roomId)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
+    if (incomingRequest->Parameters.size() != 4 || !Utils::IsUint(incomingRequest->Parameters[0]) || !Utils::IsUint(incomingRequest->Parameters[1]) || !Utils::IsUint(incomingRequest->Parameters[2]) || !Utils::IsUint(incomingRequest->Parameters[3]))
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
+    uint32_t sX = Utils::Str2Uint(incomingRequest->Parameters[0]);
+    uint32_t sY = Utils::Str2Uint(incomingRequest->Parameters[1]);
+    uint32_t eX = Utils::Str2Uint(incomingRequest->Parameters[2]);
+    uint32_t eY = Utils::Str2Uint(incomingRequest->Parameters[3]);
+
+    if (sX < 0 || sY < 0 || eX < 0 || eY < 0 || sX > 7 || sY > 7 || eX > 7 || eY > 7)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_PARAMETERS);
+        return;
+    }
+
+    if (!demandedRoom->second->PlayMove(sX, sY, eX, eY))
     {
         _requestManager->SendResponse(_clients.at(incomingRequest.get()->ClientId), OPCODE::YOU_MOVED, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
         return;
@@ -164,12 +305,46 @@ void GameLobby::PlayedMove(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::PlayerLeave(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::YOU_LEFT, {}, BIND_TIMEOUT);
     _clients.at(incomingRequest->ClientId).Online = false;
 }
 
 void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (demandedClient->second.GameRoomId == 0)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::GAME_QUITED, {}, BIND_TIMEOUT);
 
     auto demandedRoom = _gameRooms.find(_clients.at(incomingRequest->ClientId).GameRoomId);
@@ -232,6 +407,21 @@ void GameLobby::PlayerQuit(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::ReconnectPlayer(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+
     _clients.at(incomingRequest->ClientId).Online = true;
     _clients.at(incomingRequest->ClientId).LastEcho = std::chrono::steady_clock::now();
     _clients.at(incomingRequest->ClientId).Pinged = false;
@@ -259,6 +449,26 @@ void GameLobby::ReconnectPlayer(std::shared_ptr<IncomingRequest>& incomingReques
 
 void GameLobby::SendLastMove(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (demandedClient->second.GameRoomId == 0)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     Client& c = _clients.at(incomingRequest->ClientId);
 
     _requestManager->SendResponse(c, OPCODE::THIS_HAPPEND, {
@@ -318,6 +528,33 @@ void GameLobby::SendLastMove(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::OtherStatus(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (demandedClient->second.GameRoomId == 0)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    uint32_t roomId = _clients.at(incomingRequest->ClientId).GameRoomId;
+
+    if (_gameRooms.at(roomId)->GetOtherPlayerId(demandedClient->second.GameRoomId) == 0)
+    {
+        _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::HE_IS_ALIVE, {std::to_string(static_cast<uint32_t>(GAME_BOOL::FALSE))}, BIND_TIMEOUT);
+    }
+
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::HE_IS_ALIVE, {std::to_string(static_cast<uint32_t>((_clients.at(_gameRooms.at(_clients.at(incomingRequest->ClientId).GameRoomId)->GetOtherPlayerId(incomingRequest->ClientId)).Online ? GAME_BOOL::TRUE : GAME_BOOL::FALSE)))}, BIND_TIMEOUT);
 }
 
