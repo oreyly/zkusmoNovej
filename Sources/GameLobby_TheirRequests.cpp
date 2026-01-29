@@ -560,6 +560,20 @@ void GameLobby::OtherStatus(std::shared_ptr<IncomingRequest>& incomingRequest)
 
 void GameLobby::IsPlayerInGame(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     uint32_t roomId = _clients.at(incomingRequest->ClientId).GameRoomId;
 
     if (roomId == 0)
@@ -598,6 +612,26 @@ void GameLobby::IsPlayerInGame(std::shared_ptr<IncomingRequest>& incomingRequest
 
 void GameLobby::SendBoard(std::shared_ptr<IncomingRequest>& incomingRequest)
 {
+    auto demandedClient = _clients.find(incomingRequest->ClientId);
+
+    if (demandedClient == _clients.end())
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::UNKNOWN_USER);
+        return;
+    }
+
+    if (!demandedClient->second.Online)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
+    if (demandedClient->second.GameRoomId == 0)
+    {
+        Logger::LogError<GameLobby>(ERROR_CODES::BAD_OPERATION);
+        return;
+    }
+
     uint32_t roomId = _clients.at(incomingRequest->ClientId).GameRoomId;
 
     _requestManager->SendResponse(_clients.at(incomingRequest->ClientId), OPCODE::HERE_POSITION, {_gameRooms.at(roomId)->GetPositionString(), std::to_string(static_cast<uint32_t>(_gameRooms.at(roomId)->GetActualPlayer()))}, BIND_TIMEOUT);
